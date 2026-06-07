@@ -178,13 +178,16 @@ class S57ToS52Adapter {
         S57Value.Empty -> null
     }
 
-    private companion object {
-        private val objectClassByAcronym = S57ObjectClass.entries.associateBy { it.acronym.uppercase() }
-        private val attributeByAcronym = S57Attribute.entries.associateBy { it.acronym.uppercase() }
+}
 
-        fun s52ObjectClass(acronym: String): S57ObjectClass? = objectClassByAcronym[acronym.trim().uppercase()]
-        fun s52Attribute(acronym: String): S57Attribute? = attributeByAcronym[acronym.trim().uppercase()]
-    }
+private fun s52ObjectClass(acronym: String): S57ObjectClass? {
+    val key = acronym.trim()
+    return S57ObjectClass.entries.firstOrNull { it.acronym.equals(key, ignoreCase = true) }
+}
+
+private fun s52Attribute(acronym: String): S57Attribute? {
+    val key = acronym.trim()
+    return S57Attribute.entries.firstOrNull { it.acronym.equals(key, ignoreCase = true) }
 }
 
 fun defaultSettings(
