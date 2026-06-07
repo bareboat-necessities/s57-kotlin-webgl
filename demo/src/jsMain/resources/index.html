@@ -19,11 +19,13 @@
     <section class="panel">
       <h2>Load local ENC files</h2>
       <input id="fileInput" type="file" multiple />
-      <button id="renderButton">Initialize WebGL canvas</button>
+      <button id="renderButton">Render static sample chart</button>
       <h3>Selected files</h3>
       <pre id="fileList">No files selected.</pre>
       <h3>Status</h3>
       <pre id="status">Phase 0 demo shell ready.</pre>
+      <h3>Pointer / gesture events</h3>
+      <pre id="events" class="events">No interaction yet.</pre>
     </section>
     <section class="panel">
       <canvas id="chartCanvas" width="1280" height="720"></canvas>

@@ -13,6 +13,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":s57-core"))
+            api(project(":s57-index"))
             api(project(":s57-s52-adapter"))
         }
         commonTest.dependencies {

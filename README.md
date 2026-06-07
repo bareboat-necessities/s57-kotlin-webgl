@@ -84,3 +84,10 @@ Local builds can either unpack that ZIP into `build/s52-maven` or pass:
 ```bash
 gradle phase6Check -Ps52MavenRepo=/path/to/unpacked/s52-maven -Ps52.version=0.3.0
 ```
+
+### Phase 7 static rendering
+
+The library now has a static chart-frame pipeline: indexed S-57 features can be
+queried, projected to a fixed viewport, hit-tested, and drawn by the browser
+WebGL shell. This is intentionally a rendering primitive for a future larger
+chartplotter, not a complete chartplotter UI.

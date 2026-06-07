@@ -7,12 +7,6 @@ allprojects {
     version = "0.1.0-SNAPSHOT"
 }
 
-subprojects {
-    repositories {
-        mavenCentral()
-        google()
-    }
-}
 
 tasks.register("phase0Audit") {
     group = "verification"
@@ -243,4 +237,42 @@ tasks.register("phase6Check") {
     group = "verification"
     description = "Runs Phase 6 S-52 adapter checks and all previous phase checks. Requires the s52 v0.3.0 Maven release repository."
     dependsOn("phase5Check", "phase6Audit", ":s57-s52-adapter:build")
+}
+
+tasks.register("phase7Audit") {
+    group = "verification"
+    description = "Checks Phase 7 static chart frame projection, hit testing, and WebGL draw-shell integration."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/ChartProjection.kt",
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/StaticChartFrame.kt",
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57StaticChartRenderer.kt",
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/DepthSamples.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/ChartProjectionTest.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/S57StaticChartRendererTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 7 files: $missing" }
+
+        val build = layout.projectDirectory.file("build.gradle.kts").asFile.readText()
+        check("subprojects {\n    repositories" !in build) { "Repositories must be declared in settings.gradle.kts, not in project build.gradle.kts." }
+
+        val renderer = layout.projectDirectory.file("s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57StaticChartRenderer.kt").asFile.readText()
+        check("S57StaticChartRenderer" in renderer) { "Phase 7 must include the static chart renderer." }
+        check("S57FeatureQuery" in renderer) { "Phase 7 renderer must query the Phase 5 index." }
+
+        val browser = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt").asFile.readText()
+        check("renderFrame" in browser) { "Browser renderer must draw a Phase 7 StaticChartFrame." }
+        check("TRIANGLE_FAN" in browser) { "Browser renderer must include basic polygon drawing." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 7 — static WebGL chart render" in phases) { "docs/PHASES.md must document Phase 7." }
+    }
+}
+
+tasks.register("phase7Check") {
+    group = "verification"
+    description = "Runs Phase 7 static WebGL chart render checks and all previous phase checks."
+    dependsOn("phase6Check", "phase7Audit", ":s57-render-webgl:build", ":demo:build")
 }

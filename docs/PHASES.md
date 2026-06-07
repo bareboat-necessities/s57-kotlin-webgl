@@ -154,3 +154,21 @@ Acceptance:
 - bbox queries return only intersecting features
 - object-class filters and limits are honored
 - IndexedDB schema opener is present in `jsMain`
+
+## Phase 7 — static WebGL chart render
+
+Adds the first complete static rendering pipeline: query indexed features, adapt
+through the S-52 bridge, project lon/lat geometry into a fixed screen, perform
+basic hit testing, and draw a static WebGL frame. This is still not a full
+chartplotter: continuous pan/zoom UX, quilting, AIS, NMEA, ownship, alarms, and
+route planning remain out of scope.
+
+Acceptance:
+
+- `S57StaticChartRenderer` queries the Phase 5 index by cell and bounds.
+- Projected features expose screen-space geometry and hit-test bounds.
+- Center-crosshair hit tests work on the prepared static frame.
+- Browser WebGL shell can draw points, lines, polygon fills/outlines, and the
+  optional center crosshair.
+- Gradle repository declarations stay in `settings.gradle.kts` so CI works with
+  `RepositoriesMode.FAIL_ON_PROJECT_REPOS`.

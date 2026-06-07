@@ -1,6 +1,7 @@
 package io.github.s57.render
 
 import kotlinx.browser.document
+import org.khronos.webgl.Float32Array
 import org.khronos.webgl.WebGLRenderingContext
 import org.w3c.dom.HTMLCanvasElement
 
@@ -50,4 +51,131 @@ class BrowserS57WebGlRenderer(
             depthMeshEnabled = request.depthMesh.enabled
         )
     }
+    fun renderFrame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
+        val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
+            ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
+        val gl = canvas.getContext("webgl") as? WebGLRenderingContext
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", frame.request.camera)
+
+        gl.viewport(0, 0, canvas.width, canvas.height)
+        gl.clearColor(0.82f, 0.90f, 0.96f, 1.0f)
+        gl.clear(WebGLRenderingContext.COLOR_BUFFER_BIT)
+        val program = SimpleColorProgram.create(gl) ?: return frame.summary().copy(message = "WebGL shader setup failed")
+        program.use()
+        for (feature in frame.projectedFeatures) {
+            when (val geometry = feature.geometry) {
+                ProjectedGeometry.Empty -> Unit
+                is ProjectedGeometry.Point -> program.drawPoints(listOf(geometry.point), canvas, colorFor(feature.objectClass))
+                is ProjectedGeometry.MultiPoint -> program.drawPoints(geometry.points, canvas, colorFor(feature.objectClass))
+                is ProjectedGeometry.LineString -> program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass))
+                is ProjectedGeometry.Polygon -> {
+                    geometry.rings.firstOrNull()?.let { ring ->
+                        program.drawTriangleFan(ring, canvas, fillColorFor(feature.objectClass))
+                        program.drawLineStrip(ring, canvas, colorFor(feature.objectClass))
+                    }
+                }
+                is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { polygon ->
+                    polygon.rings.firstOrNull()?.let { ring ->
+                        program.drawTriangleFan(ring, canvas, fillColorFor(feature.objectClass))
+                        program.drawLineStrip(ring, canvas, colorFor(feature.objectClass))
+                    }
+                }
+            }
+        }
+        if (frame.request.centerCrosshair.enabled) drawCrosshair(program, canvas, frame.request.centerCrosshair.sizePx)
+        return frame.summary().copy(message = "Phase 7 static WebGL frame rendered features=${frame.featureCount}")
+    }
+
+    private fun drawCrosshair(program: SimpleColorProgram, canvas: HTMLCanvasElement, size: Double) {
+        val cx = canvas.width / 2.0
+        val cy = canvas.height / 2.0
+        val color = floatArrayOf(0.0f, 0.0f, 0.0f, 0.85f)
+        program.drawLineStrip(listOf(ScreenPoint(cx - size, cy), ScreenPoint(cx + size, cy)), canvas, color)
+        program.drawLineStrip(listOf(ScreenPoint(cx, cy - size), ScreenPoint(cx, cy + size)), canvas, color)
+    }
+
+    private fun colorFor(objectClass: String): FloatArray = when (objectClass.uppercase()) {
+        "DEPCNT" -> floatArrayOf(0.0f, 0.25f, 0.65f, 1.0f)
+        "SOUNDG" -> floatArrayOf(0.0f, 0.0f, 0.0f, 1.0f)
+        "BOYLAT", "BCNLAT", "LIGHTS" -> floatArrayOf(0.85f, 0.1f, 0.05f, 1.0f)
+        "WRECKS", "OBSTRN" -> floatArrayOf(0.45f, 0.1f, 0.1f, 1.0f)
+        else -> floatArrayOf(0.05f, 0.18f, 0.24f, 1.0f)
+    }
+
+    private fun fillColorFor(objectClass: String): FloatArray = when (objectClass.uppercase()) {
+        "DEPARE" -> floatArrayOf(0.70f, 0.88f, 0.96f, 0.65f)
+        else -> floatArrayOf(0.78f, 0.86f, 0.80f, 0.45f)
+    }
+
+    private class SimpleColorProgram private constructor(
+        private val gl: WebGLRenderingContext,
+        private val program: org.khronos.webgl.WebGLProgram,
+        private val positionLocation: Int,
+        private val colorLocation: org.khronos.webgl.WebGLUniformLocation?,
+        private val buffer: org.khronos.webgl.WebGLBuffer?
+    ) {
+        fun use() {
+            gl.useProgram(program)
+            gl.bindBuffer(WebGLRenderingContext.ARRAY_BUFFER, buffer)
+            gl.enableVertexAttribArray(positionLocation)
+            gl.vertexAttribPointer(positionLocation, 2, WebGLRenderingContext.FLOAT, false, 0, 0)
+            gl.enable(WebGLRenderingContext.BLEND)
+            gl.blendFunc(WebGLRenderingContext.SRC_ALPHA, WebGLRenderingContext.ONE_MINUS_SRC_ALPHA)
+        }
+
+        fun drawPoints(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) = draw(WebGLRenderingContext.POINTS, points, canvas, color)
+        fun drawLineStrip(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) = draw(WebGLRenderingContext.LINE_STRIP, points, canvas, color)
+        fun drawTriangleFan(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
+            if (points.size < 3) return
+            draw(WebGLRenderingContext.TRIANGLE_FAN, points, canvas, color)
+        }
+
+        private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
+            if (points.isEmpty()) return
+            val data = Float32Array(points.size * 2)
+            points.forEachIndexed { index, point ->
+                data[index * 2] = ((point.x / canvas.width.toDouble()) * 2.0 - 1.0).toFloat()
+                data[index * 2 + 1] = (1.0 - (point.y / canvas.height.toDouble()) * 2.0).toFloat()
+            }
+            gl.bufferData(WebGLRenderingContext.ARRAY_BUFFER, data, WebGLRenderingContext.STREAM_DRAW)
+            gl.uniform4f(colorLocation, color[0], color[1], color[2], color[3])
+            gl.drawArrays(mode, 0, points.size)
+        }
+
+        companion object {
+            fun create(gl: WebGLRenderingContext): SimpleColorProgram? {
+                val vertex = compile(gl, WebGLRenderingContext.VERTEX_SHADER, """
+                    attribute vec2 a_position;
+                    void main() {
+                        gl_Position = vec4(a_position, 0.0, 1.0);
+                        gl_PointSize = 6.0;
+                    }
+                """.trimIndent()) ?: return null
+                val fragment = compile(gl, WebGLRenderingContext.FRAGMENT_SHADER, """
+                    precision mediump float;
+                    uniform vec4 u_color;
+                    void main() { gl_FragColor = u_color; }
+                """.trimIndent()) ?: return null
+                val p = gl.createProgram() ?: return null
+                gl.attachShader(p, vertex)
+                gl.attachShader(p, fragment)
+                gl.linkProgram(p)
+                return SimpleColorProgram(
+                    gl = gl,
+                    program = p,
+                    positionLocation = gl.getAttribLocation(p, "a_position"),
+                    colorLocation = gl.getUniformLocation(p, "u_color"),
+                    buffer = gl.createBuffer()
+                )
+            }
+
+            private fun compile(gl: WebGLRenderingContext, type: Int, source: String): org.khronos.webgl.WebGLShader? {
+                val shader = gl.createShader(type) ?: return null
+                gl.shaderSource(shader, source)
+                gl.compileShader(shader)
+                return shader
+            }
+        }
+    }
+
 }

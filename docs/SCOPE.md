@@ -57,3 +57,11 @@ The core library reconstructs basic S-57 geometries from decoded feature/vector 
 ## Phase 5 indexing scope
 
 `s57-kotlin-webgl` owns basic browser-side indexing for decoded S-57 charts.  The first index is intentionally simple: fixed lon/lat spatial bins over feature bounding boxes, backed by a common in-memory implementation and a browser IndexedDB schema boundary.  This makes static chart render requests efficient enough for the future WebGL phase while keeping chartplotter-level pan/zoom, quilting, AIS, NMEA, and ownship state out of scope.
+
+## Phase 7 static rendering boundary
+
+Phase 7 adds a fixed-frame renderer for one requested cell/bounds/viewport. It is
+allowed to query the local index, project features, draw a static WebGL image,
+and report hit-test results. It is not allowed to grow into full chartplotter
+state management: no quilting, live pan/zoom controller, AIS, NMEA, ownship,
+routes, alarms, or navigation workflow belongs in this project.
