@@ -69,3 +69,18 @@ Phase 4 reconstructs basic geometries from raw S-57 feature/vector records: poin
 ## Current implementation phase
 
 Phase 5 adds the first browser-indexing layer: decoded `S57Dataset` values can be imported into a fixed-grid spatial index, queried by geographic bounds, and prepared for a browser IndexedDB-backed cache.  The project still does not implement chartplotter pan/zoom UX, AIS, NMEA, or quilting.
+
+
+## Phase 6 S-52 dependency
+
+Phase 6 uses the published `s52-kotlin-webgl` v0.3.0 Maven release. CI downloads:
+
+```text
+https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.3.0/s52-kotlin-webgl-release-maven-0.3.0.zip
+```
+
+Local builds can either unpack that ZIP into `build/s52-maven` or pass:
+
+```bash
+gradle phase6Check -Ps52MavenRepo=/path/to/unpacked/s52-maven -Ps52.version=0.3.0
+```

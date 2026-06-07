@@ -211,3 +211,36 @@ tasks.register("phase5Check") {
     dependsOn("phase4Check", "phase5Audit", ":s57-index:build")
 }
 
+
+
+tasks.register("phase6Audit") {
+    group = "verification"
+    description = "Checks Phase 6 S-57 to S-52 adapter and release Maven dependency wiring."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt",
+            "s57-s52-adapter/src/commonTest/kotlin/io/github/s57/adapter/S57ToS52AdapterTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 6 files: $missing" }
+
+        val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
+        check("EncFeature" in adapter) { "Phase 6 adapter must produce s52 EncFeature objects." }
+        check("S52PortrayalEngine" in adapter) { "Phase 6 adapter must expose a portrayal helper using s52-kotlin-webgl." }
+        check("S52DrawCommandTranscript" in adapter) { "Phase 6 adapter must expose command transcript diagnostics." }
+
+        val ci = layout.projectDirectory.file(".github/workflows/ci.yml").asFile.readText()
+        check("s52-kotlin-webgl-release-maven-0.3.0.zip" in ci) { "CI must use the s52-kotlin-webgl v0.3.0 Maven release ZIP." }
+        check("ed4ece6664670fec275f1d3d8d2ff52f1dfa54384501ebd97553c670e9687a79" in ci) { "CI must verify the s52 Maven release checksum." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 6 — S-52 adapter" in phases) { "docs/PHASES.md must document Phase 6." }
+    }
+}
+
+tasks.register("phase6Check") {
+    group = "verification"
+    description = "Runs Phase 6 S-52 adapter checks and all previous phase checks. Requires the s52 v0.3.0 Maven release repository."
+    dependsOn("phase5Check", "phase6Audit", ":s57-s52-adapter:build")
+}
