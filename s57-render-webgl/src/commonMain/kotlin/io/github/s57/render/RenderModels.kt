@@ -18,9 +18,7 @@ data class ChartRenderRequest(
     val centerCrosshair: CenterCrosshairConfig = CenterCrosshairConfig(),
     val depthMesh: DepthMeshConfig = DepthMeshConfig(),
     val renderMode: ChartRenderMode = ChartRenderMode.Flat2D
-) {
-    companion object
-}
+)
 
 enum class ChartRenderMode {
     Flat2D,

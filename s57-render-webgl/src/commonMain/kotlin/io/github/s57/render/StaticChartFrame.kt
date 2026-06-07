@@ -10,7 +10,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 sealed class ProjectedGeometry {
-    data object Empty : ProjectedGeometry()
+    class Empty : ProjectedGeometry()
     data class Point(val point: ScreenPoint) : ProjectedGeometry()
     data class MultiPoint(val points: List<ScreenPoint>) : ProjectedGeometry()
     data class LineString(val points: List<ScreenPoint>) : ProjectedGeometry()
@@ -37,22 +37,21 @@ data class ScreenBounds(
     fun intersects(point: ScreenPoint, radiusPx: Double): Boolean =
         point.x >= minX - radiusPx && point.x <= maxX + radiusPx && point.y >= minY - radiusPx && point.y <= maxY + radiusPx
 
-    companion object {
-        fun from(points: List<ScreenPoint>): ScreenBounds? {
-            if (points.isEmpty()) return null
-            var minX = points.first().x
-            var maxX = points.first().x
-            var minY = points.first().y
-            var maxY = points.first().y
-            for (point in points.drop(1)) {
-                minX = min(minX, point.x)
-                maxX = max(maxX, point.x)
-                minY = min(minY, point.y)
-                maxY = max(maxY, point.y)
-            }
-            return ScreenBounds(minX, minY, maxX, maxY)
-        }
+}
+
+fun screenBoundsFrom(points: List<ScreenPoint>): ScreenBounds? {
+    if (points.isEmpty()) return null
+    var minX = points.first().x
+    var maxX = points.first().x
+    var minY = points.first().y
+    var maxY = points.first().y
+    for (point in points.drop(1)) {
+        minX = min(minX, point.x)
+        maxX = max(maxX, point.x)
+        minY = min(minY, point.y)
+        maxY = max(maxY, point.y)
     }
+    return ScreenBounds(minX, minY, maxX, maxY)
 }
 
 data class StaticChartFrame(
@@ -102,7 +101,7 @@ class StaticChartFrameHitTester(
 }
 
 fun S57Geometry.project(projection: ChartProjection): ProjectedGeometry = when (this) {
-    S57Geometry.Empty -> ProjectedGeometry.Empty
+    S57Geometry.Empty -> ProjectedGeometry.Empty()
     is S57Geometry.Point -> ProjectedGeometry.Point(projection.project(coordinate))
     is S57Geometry.MultiPoint -> ProjectedGeometry.MultiPoint(points.map(projection::project))
     is S57Geometry.LineString -> ProjectedGeometry.LineString(points.map(projection::project))
@@ -111,7 +110,7 @@ fun S57Geometry.project(projection: ChartProjection): ProjectedGeometry = when (
 }
 
 fun ProjectedGeometry.points(): List<ScreenPoint> = when (this) {
-    ProjectedGeometry.Empty -> emptyList()
+    is ProjectedGeometry.Empty -> emptyList()
     is ProjectedGeometry.Point -> listOf(point)
     is ProjectedGeometry.MultiPoint -> points
     is ProjectedGeometry.LineString -> points
@@ -120,7 +119,7 @@ fun ProjectedGeometry.points(): List<ScreenPoint> = when (this) {
 }
 
 private fun ProjectedFeature.distanceTo(point: ScreenPoint): Double = when (val g = geometry) {
-    ProjectedGeometry.Empty -> Double.POSITIVE_INFINITY
+    is ProjectedGeometry.Empty -> Double.POSITIVE_INFINITY
     is ProjectedGeometry.Point -> distance(g.point, point)
     is ProjectedGeometry.MultiPoint -> g.points.minOfOrNull { distance(it, point) } ?: Double.POSITIVE_INFINITY
     is ProjectedGeometry.LineString -> distanceToPolyline(g.points, point)

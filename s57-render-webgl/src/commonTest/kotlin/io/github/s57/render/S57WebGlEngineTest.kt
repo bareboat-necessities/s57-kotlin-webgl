@@ -29,7 +29,7 @@ class S57WebGlEngineTest {
         assertEquals(2, engine.stats().featureCount)
         assertEquals(listOf("US5TEST"), engine.listCells().map { it.cellId })
 
-        val request = ChartRenderRequest.forCell(dataset.summary, widthPx = 800, heightPx = 600)
+        val request = chartRenderRequestForCell(dataset.summary, widthPx = 800, heightPx = 600)
         val rendered = engine.render(request)
         rendered.validateMinimum(minVisibleFeatures = 2)
         assertTrue(rendered.toSvgSnapshot().contains("<svg"))
@@ -44,7 +44,7 @@ class S57WebGlEngineTest {
         )
         val engine = S57WebGlEngine()
         engine.importDataset(dataset)
-        val request = ChartRenderRequest.forCell(dataset.summary, widthPx = 800, heightPx = 600)
+        val request = chartRenderRequestForCell(dataset.summary, widthPx = 800, heightPx = 600)
             .copy(centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true, hitRadiusPx = 24.0))
         val hits = engine.centerCrosshairHits(request)
         assertTrue(hits.any { it.featureId == 10L })

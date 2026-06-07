@@ -81,7 +81,7 @@ object RenderedArtifactDiagnostics {
 
     private fun StringBuilder.appendFeature(feature: ProjectedFeature, includeLabels: Boolean) {
         when (val geometry = feature.geometry) {
-            ProjectedGeometry.Empty -> Unit
+            is ProjectedGeometry.Empty -> Unit
             is ProjectedGeometry.Point -> appendPoint(geometry.point, feature)
             is ProjectedGeometry.MultiPoint -> geometry.points.forEach { appendPoint(it, feature) }
             is ProjectedGeometry.LineString -> appendPolyline(geometry.points, feature)

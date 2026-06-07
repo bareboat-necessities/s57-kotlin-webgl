@@ -83,7 +83,7 @@ data class S57EngineRenderResult(
     fun validateMinimum(minVisibleFeatures: Int = 1) = diagnostics.validateMinimum(minVisibleFeatures = minVisibleFeatures)
 }
 
-fun ChartRenderRequest.Companion.forCell(
+fun chartRenderRequestForCell(
     cell: S57CellSummary,
     widthPx: Int = 1024,
     heightPx: Int = 768,

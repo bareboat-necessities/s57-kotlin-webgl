@@ -51,12 +51,11 @@ class ChartProjection(
         return GeoPoint(lon.coerceIn(min(bounds.minLon, bounds.maxLon), max(bounds.minLon, bounds.maxLon)), lat.coerceIn(min(bounds.minLat, bounds.maxLat), max(bounds.minLat, bounds.maxLat)))
     }
 
-    companion object {
-        fun from(request: ChartRenderRequest): ChartProjection = ChartProjection(
-            bounds = request.bounds,
-            viewport = ScreenSize(request.widthPx, request.heightPx),
-            rotationDegrees = request.camera.rotationDegrees,
-            tiltDegrees = if (request.renderMode == ChartRenderMode.Flat2D) 0.0 else request.camera.tiltDegrees
-        )
-    }
 }
+
+fun chartProjectionFrom(request: ChartRenderRequest): ChartProjection = ChartProjection(
+    bounds = request.bounds,
+    viewport = ScreenSize(request.widthPx, request.heightPx),
+    rotationDegrees = request.camera.rotationDegrees,
+    tiltDegrees = if (request.renderMode == ChartRenderMode.Flat2D) 0.0 else request.camera.tiltDegrees
+)

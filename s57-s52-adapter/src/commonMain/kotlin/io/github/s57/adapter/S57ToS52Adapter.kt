@@ -101,7 +101,7 @@ private fun S57Geometry.toPortrayalGeometry(
 }
 
 private fun S57Value.toPortrayalValue(): S57PortrayalValue = when (this) {
-    S57Value.Empty -> S57PortrayalValue.Empty
+    S57Value.Empty -> S57PortrayalValue.Empty()
     is S57Value.Text -> S57PortrayalValue.Text(value)
     is S57Value.Integer -> S57PortrayalValue.Integer(value)
     is S57Value.Decimal -> S57PortrayalValue.Decimal(value)
@@ -162,7 +162,7 @@ sealed interface S57PortrayalGeometry {
 }
 
 sealed interface S57PortrayalValue {
-    data object Empty : S57PortrayalValue
+    class Empty : S57PortrayalValue
     data class Text(val value: String) : S57PortrayalValue
     data class Integer(val value: Int) : S57PortrayalValue
     data class Decimal(val value: Double) : S57PortrayalValue

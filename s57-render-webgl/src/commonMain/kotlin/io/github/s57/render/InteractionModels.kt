@@ -70,16 +70,15 @@ data class ChartCameraState(
     }
 
     fun zoomedBy(factor: Double): ChartCameraState = copy(zoom = (zoom * factor).coerceIn(0.01, 1_000_000.0))
-    fun rotatedBy(deltaDegrees: Double): ChartCameraState = copy(rotationDegrees = normalizeDegrees(rotationDegrees + deltaDegrees))
+    fun rotatedBy(deltaDegrees: Double): ChartCameraState = copy(rotationDegrees = normalizeChartDegrees(rotationDegrees + deltaDegrees))
     fun tiltedBy(deltaDegrees: Double): ChartCameraState = copy(tiltDegrees = (tiltDegrees + deltaDegrees).coerceIn(0.0, 65.0))
 
-    companion object {
-        fun normalizeDegrees(value: Double): Double {
-            var v = value % 360.0
-            if (v < 0.0) v += 360.0
-            return v
-        }
-    }
+}
+
+fun normalizeChartDegrees(value: Double): Double {
+    var v = value % 360.0
+    if (v < 0.0) v += 360.0
+    return v
 }
 
 sealed class ChartUserEvent {

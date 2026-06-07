@@ -20,11 +20,11 @@ class S57StaticChartRenderer(
     fun prepareFrame(request: ChartRenderRequest): StaticChartFrame {
         val features = indexStore.queryFeatures(S57FeatureQuery(request.cellId, request.bounds))
         val adapted = adapter.adaptFeatures(features)
-        val projection = ChartProjection.from(request)
+        val projection = chartProjectionFrom(request)
         val projected = features.mapNotNull { feature ->
             val projectedGeometry = feature.geometry.project(projection)
             val points = projectedGeometry.points()
-            val screenBounds = ScreenBounds.from(points)
+            val screenBounds = screenBoundsFrom(points)
             if (points.isEmpty() || screenBounds == null) {
                 null
             } else {
