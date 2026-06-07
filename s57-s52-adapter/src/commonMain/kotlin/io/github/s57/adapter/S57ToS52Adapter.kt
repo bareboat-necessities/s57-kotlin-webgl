@@ -1,118 +1,173 @@
 package io.github.s57.adapter
 
+import io.github.s52.api.S52PortrayalRequest
+import io.github.s52.api.S52PortrayalSession
+import io.github.s52.catalog.PrimitiveType
+import io.github.s52.catalog.S57Attribute
+import io.github.s52.catalog.S57ObjectClass
+import io.github.s52.core.draw.S52DrawCommand
+import io.github.s52.core.draw.S52DrawCommandTranscript
+import io.github.s52.core.geometry.Coordinate
+import io.github.s52.core.geometry.EncGeometry
+import io.github.s52.core.model.EncFeature
+import io.github.s52.core.model.S57Attributes
+import io.github.s52.core.model.S57Value as S52Value
+import io.github.s52.core.settings.BoundaryStyle
+import io.github.s52.core.settings.DisplayCategory
+import io.github.s52.core.settings.MarinerSettings
+import io.github.s52.core.settings.PortrayalContext
+import io.github.s52.core.settings.S52Palette
+import io.github.s52.core.settings.SymbolStyle
 import io.github.s57.core.GeoPoint
 import io.github.s57.core.S57Feature
 import io.github.s57.core.S57Geometry
 import io.github.s57.core.S57Value
 
 /**
- * Phase 9-safe bridge model from decoded S-57 features toward S-52 portrayal.
+ * Real S-57 -> S-52 bridge.
  *
- * The public common/JS source set intentionally does not import S-52
- * classes directly. The v0.3.0 S-52 release artifact currently provides JVM and
- * metadata artifacts, but not a JS klib consumable by Kotlin/JS. Keeping this
- * module's common API S-52-shaped but dependency-light lets the browser build
- * compile while preserving a clean boundary for a future direct S-52 renderer
- * binding when a JS artifact is published.
+ * This adapter consumes decoded S-57 features from this project and creates the
+ * actual `io.github.s52` `EncFeature` values required by the S-52 portrayal
+ * engine. It deliberately keeps diagnostics for unmapped/dynamic S-57 content
+ * instead of silently replacing it with generic local draw logic.
  */
 class S57ToS52Adapter {
-    /** Compatibility summary retained from Phase 0 tests and simple diagnostics. */
     fun adapt(feature: S57Feature): S52AdapterFeature = S52AdapterFeature(
         id = feature.id,
-        objectClassAcronym = feature.objectClass,
+        objectClassAcronym = feature.objectClass.uppercase(),
         attributes = feature.attributes.keys.sorted(),
         geometryType = feature.geometry::class.simpleName ?: "Unknown"
     )
 
+    fun adaptFeature(feature: S57Feature): S57ToS52Result = adaptFeatures(listOf(feature))
+
     fun adaptFeatures(features: List<S57Feature>): S57ToS52Result {
         val diagnostics = mutableListOf<S57ToS52Diagnostic>()
-        val adapted = features.mapNotNull { feature -> adaptFeature(feature, diagnostics) }
-        return S57ToS52Result(adapted, diagnostics)
+        val encFeatures = features.mapNotNull { feature -> feature.toEncFeature(diagnostics) }
+        return S57ToS52Result(encFeatures, diagnostics)
     }
 
-    fun adaptFeature(feature: S57Feature): S57ToS52Result {
-        val diagnostics = mutableListOf<S57ToS52Diagnostic>()
-        val adapted = adaptFeature(feature, diagnostics)
-        return S57ToS52Result(listOfNotNull(adapted), diagnostics)
-    }
-
-    fun transcript(result: S57ToS52Result): String = buildString {
-        appendLine("S57ToS52Result features=${result.features.size} diagnostics=${result.diagnostics.size}")
-        for (feature in result.features) {
-            appendLine("feature ${feature.id} ${feature.objectClassAcronym} ${feature.primitive} attrs=${feature.attributes.keys.sorted().joinToString(",")}")
-        }
-        for (diagnostic in result.diagnostics) {
-            appendLine("${diagnostic.severity}: feature=${diagnostic.featureId} ${diagnostic.message}")
-        }
-    }.trimEnd()
-
-    private fun adaptFeature(feature: S57Feature, diagnostics: MutableList<S57ToS52Diagnostic>): S57PortrayalFeature? {
-        val primitive = feature.geometry.toPortrayalPrimitive()
-        if (primitive == null) {
-            diagnostics += S57ToS52Diagnostic(feature.id, S57ToS52DiagnosticSeverity.Warning, "Feature has no renderable geometry")
-            return null
-        }
-
-        val normalizedObjectClass = feature.objectClass.trim().uppercase()
-        if (normalizedObjectClass.isBlank()) {
-            diagnostics += S57ToS52Diagnostic(feature.id, S57ToS52DiagnosticSeverity.Warning, "Missing S-57 object class")
-            return null
-        }
-        if (normalizedObjectClass !in commonRenderableObjectClasses) {
-            diagnostics += S57ToS52Diagnostic(feature.id, S57ToS52DiagnosticSeverity.Info, "Object class '$normalizedObjectClass' is not in the common fast lookup table; preserving acronym dynamically")
-        }
-
-        return S57PortrayalFeature(
-            id = feature.id,
-            objectClassAcronym = normalizedObjectClass,
-            primitive = primitive,
-            attributes = feature.attributes.mapKeys { it.key.uppercase() }.mapValues { it.value.toPortrayalValue() },
-            geometry = feature.geometry.toPortrayalGeometry(feature.id, diagnostics) ?: return null,
-            scaleMin = feature.attributes["SCAMIN"]?.asIntOrNull(),
-            scaleMax = feature.attributes["SCAMAX"]?.asIntOrNull()
+    fun portray(
+        features: List<S57Feature>,
+        session: S52PortrayalSession = S52PortrayalSession.s52LibCompat(failOnStaticCompletenessErrors = false),
+        settings: MarinerSettings = defaultSettings(),
+        context: PortrayalContext = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
+    ): S57S52PortrayalResult {
+        val adapted = adaptFeatures(features)
+        val request = S52PortrayalRequest(adapted.features, settings, context)
+        val result = session.portray(request)
+        return S57S52PortrayalResult(
+            features = adapted.features,
+            commands = result.commands,
+            diagnostics = adapted.diagnostics,
+            commandTranscript = S52DrawCommandTranscript.serialize(result.commands)
         )
     }
 
-    private fun S57Geometry.toPortrayalPrimitive(): S57PortrayalPrimitive? = when (this) {
-        S57Geometry.Empty -> null
-        is S57Geometry.Point -> S57PortrayalPrimitive.Point
-        is S57Geometry.MultiPoint -> S57PortrayalPrimitive.Point
-        is S57Geometry.LineString -> S57PortrayalPrimitive.Line
-        is S57Geometry.Polygon -> S57PortrayalPrimitive.Area
-        is S57Geometry.MultiPolygon -> S57PortrayalPrimitive.Area
+    fun transcript(result: S57ToS52Result): String = buildString {
+        append("features=${result.features.size}")
+        for (feature in result.features) append("\n${feature.id}:${feature.objectClass.acronym}:${feature.primitive}:${feature.attributes.asMap().keys.joinToString(",") { it.acronym }}")
+        if (result.diagnostics.isNotEmpty()) {
+            append("\ndiagnostics=${result.diagnostics.size}")
+            result.diagnostics.forEach { append("\n${it.severity}: feature=${it.featureId} ${it.message}") }
+        }
     }
 
-    private fun S57Geometry.toPortrayalGeometry(
+    private fun S57Feature.toEncFeature(diagnostics: MutableList<S57ToS52Diagnostic>): EncFeature? {
+        val primitive = geometry.toS52Primitive()
+        if (primitive == null) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticSeverity.Warning, "Feature has no renderable geometry")
+            return null
+        }
+
+        val objectClass = s52ObjectClass(objectClass)
+        if (objectClass == null) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticSeverity.Warning, "Unsupported S-57 object class '${this.objectClass}' for S-52 v0.3.0 catalogue")
+            return null
+        }
+        if (!objectClass.supports(primitive)) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticSeverity.Warning, "S-57 object class ${objectClass.acronym} does not support primitive $primitive")
+            return null
+        }
+
+        val geometry = geometry.toS52Geometry(id, diagnostics) ?: return null
+        val attrs = attributes.toS52Attributes(id, diagnostics)
+        return EncFeature(
+            id = id,
+            objectClass = objectClass,
+            primitive = primitive,
+            attributes = attrs,
+            geometry = geometry,
+            scaleMin = attributes["SCAMIN"]?.asIntOrNull(),
+            scaleMax = attributes["SCAMAX"]?.asIntOrNull()
+        )
+    }
+
+    private fun Map<String, S57Value>.toS52Attributes(
         featureId: Long,
         diagnostics: MutableList<S57ToS52Diagnostic>
-    ): S57PortrayalGeometry? = when (this) {
+    ): S57Attributes {
+        val pairs = mutableListOf<Pair<S57Attribute, S52Value>>()
+        for ((name, value) in this) {
+            val attribute = s52Attribute(name)
+            if (attribute == null) {
+                diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Info, "Ignoring unsupported S-57 attribute '${name.uppercase()}'")
+                continue
+            }
+            pairs += attribute to value.toS52Value()
+        }
+        return S57Attributes.of(*pairs.toTypedArray())
+    }
+
+    private fun S57Geometry.toS52Primitive(): PrimitiveType? = when (this) {
         S57Geometry.Empty -> null
-        is S57Geometry.Point -> S57PortrayalGeometry.Point(coordinate.toPortrayalCoordinate())
-        is S57Geometry.MultiPoint -> S57PortrayalGeometry.MultiPoint(points.map { it.toPortrayalCoordinate() })
-        is S57Geometry.LineString -> S57PortrayalGeometry.LineString(points.map { it.toPortrayalCoordinate() })
+        is S57Geometry.Point -> PrimitiveType.Point
+        is S57Geometry.MultiPoint -> PrimitiveType.Point
+        is S57Geometry.LineString -> PrimitiveType.Line
+        is S57Geometry.Polygon -> PrimitiveType.Area
+        is S57Geometry.MultiPolygon -> PrimitiveType.Area
+    }
+
+    private fun S57Geometry.toS52Geometry(
+        featureId: Long,
+        diagnostics: MutableList<S57ToS52Diagnostic>
+    ): EncGeometry? = when (this) {
+        S57Geometry.Empty -> null
+        is S57Geometry.Point -> EncGeometry.Point(coordinate.toS52Coordinate())
+        is S57Geometry.MultiPoint -> EncGeometry.MultiPoint(points.map { it.toS52Coordinate() })
+        is S57Geometry.LineString -> EncGeometry.LineString(points.map { it.toS52Coordinate() })
         is S57Geometry.Polygon -> {
             val outer = rings.firstOrNull().orEmpty()
             if (outer.size < 3) {
                 diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Warning, "Polygon has no valid outer ring")
                 null
             } else {
-                S57PortrayalGeometry.Polygon(
-                    outer = outer.map { it.toPortrayalCoordinate() },
-                    holes = rings.drop(1).filter { it.size >= 3 }.map { ring -> ring.map { it.toPortrayalCoordinate() } }
+                EncGeometry.Polygon(
+                    outer = outer.map { it.toS52Coordinate() },
+                    holes = rings.drop(1).filter { it.size >= 3 }.map { ring -> ring.map { it.toS52Coordinate() } }
                 )
             }
         }
-        is S57Geometry.MultiPolygon -> S57PortrayalGeometry.MultiPolygon(polygons.mapNotNull { polygon -> polygon.toPortrayalGeometry(featureId, diagnostics) as? S57PortrayalGeometry.Polygon })
+        is S57Geometry.MultiPolygon -> {
+            val first = polygons.firstOrNull()
+            if (first == null) {
+                diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Warning, "MultiPolygon is empty")
+                null
+            } else {
+                diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Info, "MultiPolygon flattened to first polygon for S-52 v0.3.0 geometry model")
+                first.toS52Geometry(featureId, diagnostics)
+            }
+        }
     }
 
-    private fun GeoPoint.toPortrayalCoordinate(): S57PortrayalCoordinate = S57PortrayalCoordinate(lon = lon, lat = lat)
+    private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
 
-    private fun S57Value.toPortrayalValue(): S57PortrayalValue = when (this) {
-        S57Value.Empty -> S57PortrayalValue.Empty
-        is S57Value.Text -> S57PortrayalValue.Text(value)
-        is S57Value.Integer -> S57PortrayalValue.Integer(value)
-        is S57Value.Decimal -> S57PortrayalValue.Decimal(value)
-        is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalValue() })
+    private fun S57Value.toS52Value(): S52Value = when (this) {
+        S57Value.Empty -> S52Value.Empty
+        is S57Value.Text -> S52Value.Text(value)
+        is S57Value.Integer -> S52Value.Integer(value)
+        is S57Value.Decimal -> S52Value.Decimal(value)
+        is S57Value.ListValue -> S52Value.ListValue(values.map { it.toS52Value() })
     }
 
     private fun S57Value.asIntOrNull(): Int? = when (this) {
@@ -124,11 +179,34 @@ class S57ToS52Adapter {
     }
 
     private companion object {
-        val commonRenderableObjectClasses = setOf(
-            "DEPARE", "DEPCNT", "SOUNDG", "BOYLAT", "BCNLAT", "LIGHTS", "WRECKS", "OBSTRN",
-            "COALNE", "LNDARE", "M_COVR", "M_NSYS", "M_QUAL", "UWTROC", "SBDARE", "PONTON"
-        )
+        private val objectClassByAcronym = S57ObjectClass.entries.associateBy { it.acronym.uppercase() }
+        private val attributeByAcronym = S57Attribute.entries.associateBy { it.acronym.uppercase() }
+
+        fun s52ObjectClass(acronym: String): S57ObjectClass? = objectClassByAcronym[acronym.trim().uppercase()]
+        fun s52Attribute(acronym: String): S57Attribute? = attributeByAcronym[acronym.trim().uppercase()]
     }
+}
+
+fun defaultSettings(
+    paletteName: String = "DayBright",
+    scaleDenominator: Double = 50_000.0
+): MarinerSettings = MarinerSettings(
+    displayCategory = DisplayCategory.Other,
+    palette = paletteName.toS52Palette(),
+    scale = scaleDenominator,
+    symbolStyle = SymbolStyle.Simplified,
+    boundaryStyle = BoundaryStyle.Plain,
+    showText = true,
+    showSoundings = true,
+    showLightDescriptions = true
+)
+
+fun String.toS52Palette(): S52Palette = when (trim().lowercase()) {
+    "dusk" -> S52Palette.Dusk
+    "night", "dark" -> S52Palette.Night
+    "dayblackback" -> S52Palette.DayBlackBack
+    "daywhiteback" -> S52Palette.DayWhiteBack
+    else -> S52Palette.DayBright
 }
 
 data class S52AdapterFeature(
@@ -139,64 +217,18 @@ data class S52AdapterFeature(
 )
 
 data class S57ToS52Result(
-    val features: List<S57PortrayalFeature>,
+    val features: List<EncFeature>,
     val diagnostics: List<S57ToS52Diagnostic>
 ) {
     val skippedCount: Int get() = diagnostics.count { it.severity == S57ToS52DiagnosticSeverity.Warning }
 }
 
-data class S57PortrayalFeature(
-    val id: Long,
-    val objectClassAcronym: String,
-    val primitive: S57PortrayalPrimitive,
-    val attributes: Map<String, S57PortrayalValue>,
-    val geometry: S57PortrayalGeometry,
-    val scaleMin: Int? = null,
-    val scaleMax: Int? = null
+data class S57S52PortrayalResult(
+    val features: List<EncFeature>,
+    val commands: List<S52DrawCommand>,
+    val diagnostics: List<S57ToS52Diagnostic>,
+    val commandTranscript: String
 )
-
-enum class S57PortrayalPrimitive {
-    Point,
-    Line,
-    Area
-}
-
-data class S57PortrayalCoordinate(
-    val lon: Double,
-    val lat: Double
-)
-
-sealed class S57PortrayalGeometry {
-    data class Point(val coordinate: S57PortrayalCoordinate) : S57PortrayalGeometry()
-    data class MultiPoint(val points: List<S57PortrayalCoordinate>) : S57PortrayalGeometry()
-    data class LineString(val points: List<S57PortrayalCoordinate>) : S57PortrayalGeometry()
-    data class Polygon(val outer: List<S57PortrayalCoordinate>, val holes: List<List<S57PortrayalCoordinate>> = emptyList()) : S57PortrayalGeometry()
-    data class MultiPolygon(val polygons: List<Polygon>) : S57PortrayalGeometry()
-}
-
-sealed class S57PortrayalValue {
-    data object Empty : S57PortrayalValue()
-    data class Text(val value: String) : S57PortrayalValue()
-    data class Integer(val value: Int) : S57PortrayalValue()
-    data class Decimal(val value: Double) : S57PortrayalValue()
-    data class ListValue(val values: List<S57PortrayalValue>) : S57PortrayalValue()
-
-    fun asDoubleOrNull(): Double? = when (this) {
-        is Decimal -> value
-        is Integer -> value.toDouble()
-        is Text -> value.toDoubleOrNull()
-        is ListValue -> values.firstOrNull()?.asDoubleOrNull()
-        Empty -> null
-    }
-
-    fun asTextOrNull(): String? = when (this) {
-        is Text -> value
-        is Integer -> value.toString()
-        is Decimal -> value.toString()
-        is ListValue -> values.firstOrNull()?.asTextOrNull()
-        Empty -> null
-    }
-}
 
 data class S57ToS52Diagnostic(
     val featureId: Long,

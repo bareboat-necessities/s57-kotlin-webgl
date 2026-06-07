@@ -53,7 +53,7 @@ fun main() {
                 lines += "${file.name} — ${file.size.toLong()} bytes"
             }
             fileList?.textContent = lines.joinToString("\n")
-            status?.textContent = "Selected ${lines.size} file(s). Phase 7 demo still renders the built-in static sample until full file import is wired."
+            status?.textContent = "Selected ${lines.size} file(s). The demo can render the built-in sample with real S-52 symbology; ENC import plumbing is available through S57WebGlEngine.importS57Bytes()."
         }
         null
     }
@@ -77,7 +77,7 @@ fun main() {
             renderMode = ChartRenderMode.Tilted2D
         )
         val frame = staticRenderer.prepareFrame(request)
-        val summary = browserRenderer.renderFrame("chartCanvas", frame)
+        val summary = browserRenderer.renderS52Frame("chartCanvas", frame)
         status?.textContent = summary.message + " (${summary.widthPx}x${summary.heightPx}); centerHits=${summary.centerCrosshairHits.size}"
         null
     }

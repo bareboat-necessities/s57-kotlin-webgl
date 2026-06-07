@@ -122,3 +122,17 @@ S-57/ENC bytes -> ISO8211 -> raw S-57 records -> geometry dataset -> indexable s
 ```
 
 Browser code can use `BrowserS57FileImporter` to read a selected `File` and call `S57WebGlEngine.importS57Bytes(...)`.
+
+
+## S-52 integration status
+
+Phase 11 wires this project to `s52-kotlin-webgl` v0.3.0 release artifacts. The demo sample render uses `BrowserS57WebGlRenderer.renderS52Frame(...)`, which adapts decoded S-57 features to real S-52 `EncFeature` values, runs `S52PortrayalSession`, and renders the resulting `S52DrawCommand` list through `WebGlS52Renderer`.
+
+Local build with the S-52 release Maven ZIP:
+
+```bash
+mkdir -p build/s52-maven
+curl -fL https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.3.0/s52-kotlin-webgl-release-maven-0.3.0.zip -o /tmp/s52-kotlin-webgl-release-maven.zip
+unzip -q /tmp/s52-kotlin-webgl-release-maven.zip -d build/s52-maven
+gradle phase11Check -Ps52.version=0.3.0 -Ps52MavenRepo="$PWD/build/s52-maven"
+```

@@ -375,3 +375,35 @@ tasks.register("phase10Check") {
     description = "Runs Phase 10 import-pipeline checks and all previous phase checks."
     dependsOn("phase9Check", "phase10Audit", ":s57-core:build", ":s57-render-webgl:build", ":demo:build")
 }
+
+tasks.register("phase11Audit") {
+    group = "verification"
+    description = "Checks real s52-kotlin-webgl integration and S-52 WebGL render wiring."
+
+    doLast {
+        val adapterBuild = layout.projectDirectory.file("s57-s52-adapter/build.gradle.kts").asFile.readText()
+        check("io.github.s52:s52-api" in adapterBuild) { "s57-s52-adapter must consume the S-52 API artifact." }
+        check("io.github.s52:s52-core" in adapterBuild) { "s57-s52-adapter must consume the S-52 core artifact." }
+
+        val rendererBuild = layout.projectDirectory.file("s57-render-webgl/build.gradle.kts").asFile.readText()
+        check("io.github.s52:s52-render-webgl" in rendererBuild) { "s57-render-webgl must consume the S-52 WebGL renderer artifact." }
+
+        val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
+        check("io.github.s52.core.model.EncFeature" in adapter) { "Adapter must create real S-52 EncFeature values." }
+        check("S52PortrayalSession" in adapter) { "Adapter must call the real S-52 portrayal session." }
+        check("S52DrawCommand" in adapter) { "Adapter must expose real S-52 draw commands." }
+
+        val browserRenderer = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt").asFile.readText()
+        check("WebGlS52Renderer" in browserRenderer) { "Browser renderer must call the real S-52 WebGL renderer." }
+        check("renderS52Frame" in browserRenderer) { "Browser renderer must expose an S-52 rendering entry point." }
+
+        val demo = layout.projectDirectory.file("demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt").asFile.readText()
+        check("renderS52Frame" in demo) { "Demo must use the real S-52 rendering path." }
+    }
+}
+
+tasks.register("phase11Check") {
+    group = "verification"
+    description = "Runs Phase 11 real S-52 integration checks and all previous phase checks."
+    dependsOn("phase10Check", "phase11Audit", ":s57-s52-adapter:build", ":s57-render-webgl:build", ":demo:build")
+}

@@ -1,5 +1,10 @@
 package io.github.s57.render
 
+import io.github.s52.api.S52PortrayalSession
+import io.github.s52.render.webgl.RenderViewport
+import io.github.s52.render.webgl.WebGlS52Renderer
+import io.github.s57.adapter.S57ToS52Adapter
+import io.github.s57.adapter.defaultSettings
 import kotlinx.browser.document
 import org.khronos.webgl.Float32Array
 import org.khronos.webgl.WebGLRenderingContext
@@ -51,6 +56,48 @@ class BrowserS57WebGlRenderer(
             depthMeshEnabled = request.depthMesh.enabled
         )
     }
+    /**
+     * Render this frame through the real s52-kotlin-webgl portrayal and WebGL backend.
+     *
+     * This is the path consumers should use when they want actual S-52 symbol,
+     * line-style, area-fill, text, and sounding commands instead of the earlier
+     * Phase 7 geometry-debug renderer. If the S-52 runtime produces zero commands
+     * we deliberately fall back to the debug renderer but report that in the
+     * summary message.
+     */
+    fun renderS52Frame(
+        canvasId: String,
+        frame: StaticChartFrame,
+        session: S52PortrayalSession = S52PortrayalSession.s52LibCompat(failOnStaticCompletenessErrors = false)
+    ): RenderedFrameSummary {
+        val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
+            ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
+        val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
+        if (sourceFeatures.isEmpty()) {
+            return renderFrame(canvasId, frame).copy(message = "No source S-57 features available for S-52 portrayal; used debug geometry renderer")
+        }
+        val settings = defaultSettings(frame.request.paletteName, frame.request.scaleDenominator)
+        val portrayed = S57ToS52Adapter().portray(
+            features = sourceFeatures,
+            session = session,
+            settings = settings
+        )
+        if (portrayed.commands.isEmpty()) {
+            return renderFrame(canvasId, frame).copy(message = "S-52 portrayal produced zero commands; used debug geometry renderer diagnostics=${portrayed.diagnostics.size}")
+        }
+        val renderer = WebGlS52Renderer(canvas, session.presLib)
+        val viewport = RenderViewport(
+            west = frame.request.bounds.minLon,
+            south = frame.request.bounds.minLat,
+            east = frame.request.bounds.maxLon,
+            north = frame.request.bounds.maxLat
+        )
+        val stats = renderer.render(portrayed.commands, settings, viewport)
+        return frame.summary().copy(
+            message = "S-52 WebGL rendered commands=${portrayed.commands.size} symbols=${stats.symbolCount} lines=${stats.lineCount} areas=${stats.areaFillCount + stats.areaPatternCount} text=${stats.textCount + stats.soundingCount} diagnostics=${portrayed.diagnostics.size}"
+        )
+    }
+
     fun renderFrame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)

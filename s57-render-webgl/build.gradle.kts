@@ -16,6 +16,9 @@ kotlin {
             api(project(":s57-index"))
             api(project(":s57-s52-adapter"))
         }
+        jsMain.dependencies {
+            implementation("io.github.s52:s52-render-webgl:${property("s52.version")}")
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }

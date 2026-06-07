@@ -205,3 +205,12 @@ Acceptance:
 ## Phase 10 — end-to-end import pipeline
 
 Adds the first reusable import pipeline from S-57/ENC bytes to a decoded geometry dataset ready for the browser index.  The browser boundary can read a selected `File` into bytes and pass it to `S57WebGlEngine.importS57Bytes(...)`.  This remains a static chart engine layer: no quilting, AIS, NMEA, ownship, routing, or full chartplotter UX.
+
+
+## Phase 11 — real S-52 integration
+
+- `s57-s52-adapter` consumes the `io.github.s52` v0.3.0 Maven artifacts.
+- Decoded S-57 features are converted to real S-52 `EncFeature` values.
+- The adapter invokes `S52PortrayalSession` and exposes real `S52DrawCommand` output.
+- The browser renderer exposes `renderS52Frame(...)`, which calls `WebGlS52Renderer` from `s52-kotlin-webgl`.
+- The demo sample render uses the real S-52 WebGL path instead of the earlier debug geometry renderer.
