@@ -2,32 +2,83 @@
 
 ## Phase 0 — repository skeleton
 
-Create the modules, build, CI, docs, and browser demo shell.
+- Kotlin Multiplatform project.
+- Core module boundaries.
+- Browser demo shell.
+- File picker.
+- WebGL placeholder.
+- CI.
 
-## Phase 1 — ISO8211 parser
+## Phase 1 — interaction and render contracts
 
-Parse leaders, directories, DDR records, fields, and subfields.
+Adds the public browser-facing contracts that the later S-57 pipeline will render into.
 
-## Phase 2 — S-57 raw decoder
+Deliverables:
 
-Decode DSID/DSSI, feature records, vector records, attributes, and object classes.
+- Low-level pointer and wheel event models.
+- High-level chart UI events:
+  - click/touch object,
+  - center crosshair query,
+  - drag,
+  - hold,
+  - scroll direction,
+  - zoom,
+  - rotate,
+  - tilt.
+- Hit-test interfaces for object click/touch and center-crosshair queries.
+- Camera model with zoom, rotation, and bounded tilt.
+- Render request extensions for center crosshair and depth mesh.
+- Depth mesh data contracts for future 3D depth rendering.
+- Browser input binding for pointer and wheel events.
+- Demo event log.
 
-## Phase 3 — geometry reconstruction
+Acceptance:
 
-Build points, soundings, lines, and area rings from S-57 topology.
+- Demo canvas accepts pointer/wheel/touch events.
+- Common tests verify click, wheel zoom, camera rotation/tilt, and depth mesh validation.
+- No S-57 parsing is required yet.
 
-## Phase 4 — browser index
+## Phase 2 — ISO8211 parser
 
-Store decoded chart cells, features, geometry, and spatial bins in a browser-oriented index layer.
+- ISO8211 leader, directory, field, and subfield parsing.
+- Record dump diagnostics.
 
-## Phase 5 — S-52 adapter
+## Phase 3 — S-57 raw decoder
 
-Convert decoded features to the input model consumed by `s52-kotlin-webgl`.
+- DSID / DSSI metadata.
+- Feature and vector records.
+- Attribute decoding.
+- Object-class counts.
 
-## Phase 6 — static WebGL render
+## Phase 4 — geometry reconstruction
 
-Render a selected cell or fixed bounds to a WebGL canvas.
+- Points.
+- Multipoint soundings.
+- Lines.
+- Area rings.
+- Bounding boxes.
 
-## Phase 7 — diagnostics and artifacts
+## Phase 5 — IndexedDB storage and indexing
 
-Export parser/index/portrayal/render diagnostics that catch empty rendering and fallback explosions.
+- Cells store.
+- Features store.
+- Geometry store.
+- Spatial bins.
+- View/bounds query.
+
+## Phase 6 — S-52 adapter
+
+- Convert S-57 decoded features into `s52-kotlin-webgl` portrayal features.
+- Produce portrayal transcripts.
+
+## Phase 7 — static WebGL chart render
+
+- Query indexed features for one fixed render request.
+- Submit S-52 draw commands to WebGL.
+- Render a recognizable static chart image.
+
+## Phase 8 — rendered diagnostics
+
+- Rendered PNG/SVG snapshots.
+- Fallback-placeholder detection.
+- Empty-render detection.

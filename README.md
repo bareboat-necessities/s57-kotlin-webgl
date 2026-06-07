@@ -1,62 +1,48 @@
 # s57-kotlin-webgl
 
-`s57-kotlin-webgl` is a Kotlin Multiplatform / Kotlin JS browser project for importing, indexing, and statically rendering S-57 ENC chart data with WebGL.
+Experimental Kotlin Multiplatform / Kotlin JS library for parsing, indexing, and rendering S-57 ENC chart data in the browser with WebGL.
 
-The project is intentionally **not** a full chartplotter. It is the lower-level reusable engine that a larger chartplotter can later use.
+> **Not for navigation.** This project is experimental software. It is not type-approved ECDIS, not a certified chartplotter, and must not be used for navigation or safety-critical decisions.
 
-## Not for navigation
+## Scope
 
-This project is experimental software. It is **Not for navigation**, not type-approved ECDIS software, and must not be used as the primary or backup means of navigation.
+This repository is intentionally smaller than a full chartplotter. It focuses on:
 
-## Phase 0 scope
-
-Phase 0 creates the repository skeleton, module boundaries, demo shell, CI, and safety/scope documentation.
-
-In scope for the full `s57-kotlin-webgl` project:
-
-- ISO8211 parsing
-- S-57 raw record decoding
-- S-57 geometry reconstruction
-- browser-side indexing and cache API
-- basic IndexedDB-oriented architecture
-- static chart rendering with WebGL
-- adapter layer for the separate `s52-kotlin-webgl` portrayal/rendering library
-- diagnostics and regression artifacts
+- ISO8211 parsing.
+- S-57 record decoding.
+- S-57 geometry reconstruction.
+- Browser-side chart indexing.
+- Static WebGL rendering through `s52-kotlin-webgl`.
+- Basic mouse/touch event exposure.
+- Higher-level object interaction events.
+- Optional center-crosshair query contracts.
+- Camera contracts for zoom, rotation, and small chart tilt.
+- Future depth-mesh 3D rendering contracts.
 
 Out of scope here:
 
-- full chartplotter UI
-- continuous pan/zoom UX
-- chart quilting
-- AIS
-- NMEA 0183 / NMEA 2000
-- GPS / ownship
-- routes and waypoints
-- alarms
-- ENC download/update manager
-- ECDIS certification or type approval
+- AIS.
+- NMEA.
+- GPS / ownship.
+- Routes and waypoints.
+- Quilting.
+- Full pan/zoom chartplotter UX.
+- Navigation alarms.
+
+A larger chartplotter application can use this library later.
 
 ## Modules
 
-```text
-s57-iso8211       reusable ISO8211 parser foundation
-s57-core          S-57 models, decoder, geometry model
-s57-index         browser index/cache interfaces and test implementation
-s57-s52-adapter   bridge from decoded S-57 features to S-52 portrayal inputs
-s57-render-webgl  WebGL static chart-render orchestration
-demo              browser demo shell
-```
+- `s57-iso8211` — reusable ISO8211 reader.
+- `s57-core` — S-57 data and geometry model.
+- `s57-index` — browser indexing/cache contract.
+- `s57-s52-adapter` — bridge to `s52-kotlin-webgl`.
+- `s57-render-webgl` — static render request, event, camera, and WebGL integration contracts.
+- `demo` — minimal browser demo.
 
-## Build
-
-Without a Gradle wrapper, use Gradle 8.11+:
+## Phase checks
 
 ```bash
 gradle phase0Check
+gradle phase1Check
 ```
-
-GitHub Actions installs Gradle automatically and runs the same command.
-
-## Demo
-
-The Phase 0 demo is a browser shell. It lets the user choose local files and shows their names/sizes. Rendering is currently a placeholder clear of a WebGL canvas; real parsing/rendering starts in later phases.

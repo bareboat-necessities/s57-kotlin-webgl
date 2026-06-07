@@ -55,3 +55,32 @@ tasks.register("phase0Check") {
         "phase0Audit"
     )
 }
+
+
+tasks.register("phase1Audit") {
+    group = "verification"
+    description = "Checks Phase 1 interaction, camera, tilt, crosshair, and depth-mesh contracts."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/InteractionModels.kt",
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/DepthMeshModels.kt",
+            "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserChartInput.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/InteractionModelsTest.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/DepthMeshModelsTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 1 files: $missing" }
+
+        val scope = layout.projectDirectory.file("docs/SCOPE.md").asFile.readText()
+        check("center crosshair" in scope.lowercase()) { "Scope must document center-crosshair queries." }
+        check("depth-based 3d mesh" in scope.lowercase() || "depth mesh" in scope.lowercase()) { "Scope must document depth mesh rendering contracts." }
+        check("AIS" in scope && "out of scope" in scope.lowercase()) { "Scope must keep AIS out of this project." }
+    }
+}
+
+tasks.register("phase1Check") {
+    group = "verification"
+    description = "Runs Phase 1 interaction/render-contract checks and all Phase 0 checks."
+    dependsOn("phase0Check", "phase1Audit", ":s57-render-webgl:build", ":demo:build")
+}
