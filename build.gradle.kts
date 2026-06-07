@@ -84,3 +84,33 @@ tasks.register("phase1Check") {
     description = "Runs Phase 1 interaction/render-contract checks and all Phase 0 checks."
     dependsOn("phase0Check", "phase1Audit", ":s57-render-webgl:build", ":demo:build")
 }
+
+
+tasks.register("phase2Audit") {
+    group = "verification"
+    description = "Checks Phase 2 ISO8211 parser and diagnostic tooling."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211Reader.kt",
+            "s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211RecordDump.kt",
+            "s57-iso8211/src/jvmMain/kotlin/io/github/s57/iso8211/Iso8211DumpMain.kt",
+            "s57-iso8211/src/commonTest/kotlin/io/github/s57/iso8211/Iso8211ReaderTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 2 files: $missing" }
+
+        val reader = layout.projectDirectory.file("s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211Reader.kt").asFile.readText()
+        check("Iso8211DirectoryEntry" in reader) { "Phase 2 reader must expose directory entries." }
+        check("Iso8211Subfield" in reader) { "Phase 2 reader must expose subfield chunks." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 2 — ISO8211 parser" in phases) { "docs/PHASES.md must document Phase 2." }
+    }
+}
+
+tasks.register("phase2Check") {
+    group = "verification"
+    description = "Runs Phase 2 ISO8211 parser checks and all previous phase checks."
+    dependsOn("phase1Check", "phase2Audit", ":s57-iso8211:build")
+}

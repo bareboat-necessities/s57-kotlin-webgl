@@ -37,3 +37,8 @@ It is **not** a full chartplotter. A larger chartplotter application can be buil
 ## Phase 1 addition
 
 Phase 1 establishes the event and render contracts before parsing begins. This keeps later parser/index/render work aligned with how a future chartplotter will consume the library, without moving chartplotter-only concerns into this project.
+
+
+## Phase 2 addition
+
+Phase 2 implements the reusable ISO8211 reader. It parses record structure, directory entries, raw fields, and delimiter-separated subfield chunks. It deliberately does not interpret S-57 object classes, feature records, vector topology, or ENC update rules yet.

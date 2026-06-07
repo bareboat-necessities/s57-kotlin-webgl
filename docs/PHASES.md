@@ -40,8 +40,24 @@ Acceptance:
 
 ## Phase 2 — ISO8211 parser
 
-- ISO8211 leader, directory, field, and subfield parsing.
-- Record dump diagnostics.
+Adds the first real parser layer while staying independent from S-57 semantics.
+
+Deliverables:
+
+- ISO8211 leader parsing.
+- Directory entry parsing.
+- Field byte-range extraction.
+- Delimiter-separated subfield chunks.
+- Multiple records in one byte stream.
+- Field lookup by tag.
+- Human-readable record dump diagnostics.
+- JVM command-line dump entry point.
+
+Acceptance:
+
+- Synthetic ISO8211 records parse in common tests.
+- Record dumps show record counts, field tags, lengths, positions, and text previews.
+- No S-57 DSID/feature/vector semantic decoding is required yet.
 
 ## Phase 3 — S-57 raw decoder
 

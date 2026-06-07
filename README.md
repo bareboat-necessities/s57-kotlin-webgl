@@ -45,4 +45,10 @@ A larger chartplotter application can use this library later.
 ```bash
 gradle phase0Check
 gradle phase1Check
+gradle phase2Check
 ```
+
+
+## Phase 2 status
+
+Phase 2 adds the first real data parser layer: `s57-iso8211` now reads ISO/IEC 8211 record leaders, directory entries, field byte ranges, delimiter-separated subfield chunks, and record dump diagnostics. It still does not decode S-57 feature semantics; that begins in the next phase.
