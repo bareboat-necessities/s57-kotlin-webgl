@@ -44,91 +44,91 @@ data class RenderedArtifactReport(
             "fallback=$fallbackPlaceholderCount"
 }
 
-object RenderedArtifactDiagnostics {
-    fun analyze(frame: StaticChartFrame): RenderedArtifactReport {
-        val geometries = frame.projectedFeatures.map { it.geometry }
-        return RenderedArtifactReport(
-            widthPx = frame.request.widthPx,
-            heightPx = frame.request.heightPx,
-            featureCount = frame.projectedFeatures.size,
-            visibleFeatureCount = geometries.count { it.points().isNotEmpty() },
-            pointFeatureCount = geometries.count { it is ProjectedGeometry.Point || it is ProjectedGeometry.MultiPoint },
-            lineFeatureCount = geometries.count { it is ProjectedGeometry.LineString },
-            polygonFeatureCount = geometries.count { it is ProjectedGeometry.Polygon || it is ProjectedGeometry.MultiPolygon },
-            emptyGeometryCount = geometries.count { it is ProjectedGeometry.Empty || it.points().isEmpty() },
-            centerCrosshairHitCount = frame.centerCrosshairHits.size,
-            depthMeshVertexCount = frame.depthMesh?.vertices?.size ?: 0,
-            depthMeshTriangleCount = (frame.depthMesh?.triangleIndices?.size ?: 0) / 3,
-            fallbackPlaceholderCount = frame.projectedFeatures.count { it.displayName.contains("fallback", ignoreCase = true) || it.objectClass.equals("FALLBACK", ignoreCase = true) }
-        )
-    }
-
-    fun toSvgSnapshot(frame: StaticChartFrame, includeLabels: Boolean = false): String = buildString {
-        val width = frame.request.widthPx.coerceAtLeast(1)
-        val height = frame.request.heightPx.coerceAtLeast(1)
-        appendLine("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"$width\" height=\"$height\" viewBox=\"0 0 $width $height\" role=\"img\" aria-label=\"s57 rendered artifact snapshot\">")
-        appendLine("  <rect width=\"100%\" height=\"100%\" fill=\"#dceefa\"/>")
-        for (feature in frame.projectedFeatures) appendFeature(feature, includeLabels)
-        if (frame.request.centerCrosshair.enabled) {
-            val cx = width / 2.0
-            val cy = height / 2.0
-            val size = frame.request.centerCrosshair.sizePx
-            appendLine("  <line x1=\"${cx - size}\" y1=\"$cy\" x2=\"${cx + size}\" y2=\"$cy\" stroke=\"#111111\" stroke-width=\"1\"/>")
-            appendLine("  <line x1=\"$cx\" y1=\"${cy - size}\" x2=\"$cx\" y2=\"${cy + size}\" stroke=\"#111111\" stroke-width=\"1\"/>")
+fun analyzeRenderedArtifact(frame: StaticChartFrame): RenderedArtifactReport {
+    val geometries = frame.projectedFeatures.map { it.geometry }
+    return RenderedArtifactReport(
+        widthPx = frame.request.widthPx,
+        heightPx = frame.request.heightPx,
+        featureCount = frame.projectedFeatures.size,
+        visibleFeatureCount = geometries.count { it.points().isNotEmpty() },
+        pointFeatureCount = geometries.count { it is ProjectedGeometry.Point || it is ProjectedGeometry.MultiPoint },
+        lineFeatureCount = geometries.count { it is ProjectedGeometry.LineString },
+        polygonFeatureCount = geometries.count { it is ProjectedGeometry.Polygon || it is ProjectedGeometry.MultiPolygon },
+        emptyGeometryCount = geometries.count { it is ProjectedGeometry.Empty || it.points().isEmpty() },
+        centerCrosshairHitCount = frame.centerCrosshairHits.size,
+        depthMeshVertexCount = frame.depthMesh?.vertices?.size ?: 0,
+        depthMeshTriangleCount = (frame.depthMesh?.triangleIndices?.size ?: 0) / 3,
+        fallbackPlaceholderCount = frame.projectedFeatures.count {
+            it.displayName.contains("fallback", ignoreCase = true) || it.objectClass.equals("FALLBACK", ignoreCase = true)
         }
-        appendLine("</svg>")
-    }
-
-    private fun StringBuilder.appendFeature(feature: ProjectedFeature, includeLabels: Boolean) {
-        when (val geometry = feature.geometry) {
-            is ProjectedGeometry.Empty -> Unit
-            is ProjectedGeometry.Point -> appendPoint(geometry.point, feature)
-            is ProjectedGeometry.MultiPoint -> geometry.points.forEach { appendPoint(it, feature) }
-            is ProjectedGeometry.LineString -> appendPolyline(geometry.points, feature)
-            is ProjectedGeometry.Polygon -> appendPolygon(geometry.rings, feature)
-            is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { appendPolygon(it.rings, feature) }
-        }
-        if (includeLabels) {
-            feature.screenBounds?.let { bounds ->
-                appendLine("  <text x=\"${bounds.minX}\" y=\"${bounds.minY - 2.0}\" font-family=\"monospace\" font-size=\"10\" fill=\"#222222\">${xml(feature.objectClass)}</text>")
-            }
-        }
-    }
-
-    private fun StringBuilder.appendPoint(point: ScreenPoint, feature: ProjectedFeature) {
-        appendLine("  <circle cx=\"${point.x}\" cy=\"${point.y}\" r=\"4\" fill=\"${colorFor(feature.objectClass)}\" stroke=\"#000000\" stroke-width=\"0.5\"/>")
-    }
-
-    private fun StringBuilder.appendPolyline(points: List<ScreenPoint>, feature: ProjectedFeature) {
-        if (points.size < 2) return
-        appendLine("  <polyline points=\"${points.toSvgPoints()}\" fill=\"none\" stroke=\"${colorFor(feature.objectClass)}\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>")
-    }
-
-    private fun StringBuilder.appendPolygon(rings: List<List<ScreenPoint>>, feature: ProjectedFeature) {
-        val outer = rings.firstOrNull().orEmpty()
-        if (outer.size < 3) return
-        appendLine("  <polygon points=\"${outer.toSvgPoints()}\" fill=\"${fillFor(feature.objectClass)}\" stroke=\"${colorFor(feature.objectClass)}\" stroke-width=\"1\"/>")
-        for (hole in rings.drop(1)) appendPolyline(hole, feature)
-    }
-
-    private fun List<ScreenPoint>.toSvgPoints(): String = joinToString(" ") { "${it.x},${it.y}" }
-
-    private fun colorFor(objectClass: String): String = when (objectClass.uppercase()) {
-        "DEPCNT" -> "#0040a0"
-        "SOUNDG" -> "#000000"
-        "BOYLAT", "BCNLAT", "LIGHTS" -> "#d02020"
-        "WRECKS", "OBSTRN" -> "#5f2020"
-        else -> "#14303d"
-    }
-
-    private fun fillFor(objectClass: String): String = when (objectClass.uppercase()) {
-        "DEPARE" -> "#b2e0f4"
-        else -> "#c8d8c8"
-    }
-
-    private fun xml(value: String): String = value
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
+    )
 }
+
+fun renderedArtifactSvgSnapshot(frame: StaticChartFrame, includeLabels: Boolean = false): String = buildString {
+    val width = frame.request.widthPx.coerceAtLeast(1)
+    val height = frame.request.heightPx.coerceAtLeast(1)
+    appendLine("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"$width\" height=\"$height\" viewBox=\"0 0 $width $height\" role=\"img\" aria-label=\"s57 rendered artifact snapshot\">")
+    appendLine("  <rect width=\"100%\" height=\"100%\" fill=\"#dceefa\"/>")
+    for (feature in frame.projectedFeatures) appendFeature(feature, includeLabels)
+    if (frame.request.centerCrosshair.enabled) {
+        val cx = width / 2.0
+        val cy = height / 2.0
+        val size = frame.request.centerCrosshair.sizePx
+        appendLine("  <line x1=\"${cx - size}\" y1=\"$cy\" x2=\"${cx + size}\" y2=\"$cy\" stroke=\"#111111\" stroke-width=\"1\"/>")
+        appendLine("  <line x1=\"$cx\" y1=\"${cy - size}\" x2=\"$cx\" y2=\"${cy + size}\" stroke=\"#111111\" stroke-width=\"1\"/>")
+    }
+    appendLine("</svg>")
+}
+
+private fun StringBuilder.appendFeature(feature: ProjectedFeature, includeLabels: Boolean) {
+    when (val geometry = feature.geometry) {
+        is ProjectedGeometry.Empty -> Unit
+        is ProjectedGeometry.Point -> appendPoint(geometry.point, feature)
+        is ProjectedGeometry.MultiPoint -> geometry.points.forEach { appendPoint(it, feature) }
+        is ProjectedGeometry.LineString -> appendPolyline(geometry.points, feature)
+        is ProjectedGeometry.Polygon -> appendPolygon(geometry.rings, feature)
+        is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { appendPolygon(it.rings, feature) }
+    }
+    if (includeLabels) {
+        feature.screenBounds?.let { bounds ->
+            appendLine("  <text x=\"${bounds.minX}\" y=\"${bounds.minY - 2.0}\" font-family=\"monospace\" font-size=\"10\" fill=\"#222222\">${xml(feature.objectClass)}</text>")
+        }
+    }
+}
+
+private fun StringBuilder.appendPoint(point: ScreenPoint, feature: ProjectedFeature) {
+    appendLine("  <circle cx=\"${point.x}\" cy=\"${point.y}\" r=\"4\" fill=\"${colorFor(feature.objectClass)}\" stroke=\"#000000\" stroke-width=\"0.5\"/>")
+}
+
+private fun StringBuilder.appendPolyline(points: List<ScreenPoint>, feature: ProjectedFeature) {
+    if (points.size < 2) return
+    appendLine("  <polyline points=\"${points.toSvgPoints()}\" fill=\"none\" stroke=\"${colorFor(feature.objectClass)}\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>")
+}
+
+private fun StringBuilder.appendPolygon(rings: List<List<ScreenPoint>>, feature: ProjectedFeature) {
+    val outer = rings.firstOrNull().orEmpty()
+    if (outer.size < 3) return
+    appendLine("  <polygon points=\"${outer.toSvgPoints()}\" fill=\"${fillFor(feature.objectClass)}\" stroke=\"${colorFor(feature.objectClass)}\" stroke-width=\"1\"/>")
+    for (hole in rings.drop(1)) appendPolyline(hole, feature)
+}
+
+private fun List<ScreenPoint>.toSvgPoints(): String = joinToString(" ") { "${it.x},${it.y}" }
+
+private fun colorFor(objectClass: String): String = when (objectClass.uppercase()) {
+    "DEPCNT" -> "#0040a0"
+    "SOUNDG" -> "#000000"
+    "BOYLAT", "BCNLAT", "LIGHTS" -> "#d02020"
+    "WRECKS", "OBSTRN" -> "#5f2020"
+    else -> "#14303d"
+}
+
+private fun fillFor(objectClass: String): String = when (objectClass.uppercase()) {
+    "DEPARE" -> "#b2e0f4"
+    else -> "#c8d8c8"
+}
+
+private fun xml(value: String): String = value
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace("\"", "&quot;")

@@ -300,7 +300,7 @@ tasks.register("phase8Audit") {
 
         val diagnostics = layout.projectDirectory.file("s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderedArtifactDiagnostics.kt").asFile.readText()
         check("RenderedArtifactReport" in diagnostics) { "Phase 8 must expose RenderedArtifactReport." }
-        check("toSvgSnapshot" in diagnostics) { "Phase 8 must expose SVG snapshot generation." }
+        check("renderedArtifactSvgSnapshot" in diagnostics) { "Phase 8 must expose SVG snapshot generation." }
         check("validateMinimum" in diagnostics) { "Phase 8 diagnostics must validate empty/fallback-heavy render artifacts." }
 
         val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
@@ -330,7 +330,7 @@ tasks.register("phase9Audit") {
         check("class S57WebGlEngine" in engine) { "Phase 9 must expose S57WebGlEngine." }
         check("importDataset" in engine) { "Phase 9 engine must expose dataset import." }
         check("centerCrosshairHits" in engine) { "Phase 9 engine must expose center-crosshair query." }
-        check("RenderedArtifactDiagnostics" in engine) { "Phase 9 engine must expose render diagnostics." }
+        check("analyzeRenderedArtifact" in engine) { "Phase 9 engine must expose render diagnostics." }
 
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
         check("io.github.s52" !in adapter) { "Common adapter must remain JS-safe and avoid direct S-52 imports." }

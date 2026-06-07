@@ -10,7 +10,7 @@ class RenderedArtifactDiagnosticsTest {
     @Test
     fun analyzesVisibleFrameAndExportsSvgSnapshot() {
         val frame = sampleFrame()
-        val report = RenderedArtifactDiagnostics.analyze(frame)
+        val report = analyzeRenderedArtifact(frame)
         assertEquals(3, report.featureCount)
         assertEquals(3, report.visibleFeatureCount)
         assertEquals(1, report.pointFeatureCount)
@@ -21,7 +21,7 @@ class RenderedArtifactDiagnosticsTest {
         assertEquals(1, report.depthMeshTriangleCount)
         report.validateMinimum(minVisibleFeatures = 3)
 
-        val svg = RenderedArtifactDiagnostics.toSvgSnapshot(frame, includeLabels = true)
+        val svg = renderedArtifactSvgSnapshot(frame, includeLabels = true)
         assertTrue("<polygon" in svg)
         assertTrue("<polyline" in svg)
         assertTrue("<circle" in svg)
@@ -36,7 +36,7 @@ class RenderedArtifactDiagnosticsTest {
             adaptedFeatureCount = 0,
             projectedFeatures = emptyList()
         )
-        val report = RenderedArtifactDiagnostics.analyze(empty)
+        val report = analyzeRenderedArtifact(empty)
         assertFailsWith<IllegalArgumentException> { report.validateMinimum() }
     }
 

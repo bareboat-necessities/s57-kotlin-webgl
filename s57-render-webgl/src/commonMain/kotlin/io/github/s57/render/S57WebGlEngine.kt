@@ -50,7 +50,7 @@ class S57WebGlEngine(
 
     fun render(request: ChartRenderRequest): S57EngineRenderResult {
         val frame = staticRenderer.prepareFrame(request)
-        val diagnostics = RenderedArtifactDiagnostics.analyze(frame)
+        val diagnostics = analyzeRenderedArtifact(frame)
         return S57EngineRenderResult(frame, diagnostics)
     }
 
@@ -79,7 +79,7 @@ data class S57EngineRenderResult(
     val frame: StaticChartFrame,
     val diagnostics: RenderedArtifactReport
 ) {
-    fun toSvgSnapshot(includeLabels: Boolean = false): String = RenderedArtifactDiagnostics.toSvgSnapshot(frame, includeLabels)
+    fun toSvgSnapshot(includeLabels: Boolean = false): String = renderedArtifactSvgSnapshot(frame, includeLabels)
     fun validateMinimum(minVisibleFeatures: Int = 1) = diagnostics.validateMinimum(minVisibleFeatures = minVisibleFeatures)
 }
 
