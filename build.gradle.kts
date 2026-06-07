@@ -219,14 +219,22 @@ tasks.register("phase6Audit") {
         val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
         check(missing.isEmpty()) { "Missing Phase 6 files: $missing" }
 
+        val adapterBuild = layout.projectDirectory.file("s57-s52-adapter/build.gradle.kts").asFile.readText()
+        check("io.github.s52:s52-api" in adapterBuild) { "s57-s52-adapter must consume the S-52 API artifact." }
+        check("io.github.s52:s52-core" in adapterBuild) { "s57-s52-adapter must consume the S-52 core artifact." }
+        check("io.github.s52:s52-catalog" in adapterBuild) { "s57-s52-adapter must consume the S-52 catalog artifact." }
+        check("io.github.s52:s52-preslib" in adapterBuild) { "s57-s52-adapter must consume the S-52 presentation-library artifact." }
+        check("io.github.s52:s52-csp" in adapterBuild) { "s57-s52-adapter must consume the S-52 CSP artifact." }
+
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("S57PortrayalFeature" in adapter) { "Phase 6 adapter must produce S-52-shaped portrayal feature objects." }
-        check("S57PortrayalPrimitive" in adapter) { "Phase 6 adapter must preserve point/line/area primitive type." }
-        check("transcript" in adapter) { "Phase 6 adapter must expose transcript diagnostics without requiring the S-52 runtime on JS." }
-        check("io.github.s52" !in adapter) { "Common/JS adapter code must not import S-52 directly until a JS klib artifact is available." }
+        check("io.github.s52.core.model.EncFeature" in adapter) { "Phase 6 adapter must create real S-52 EncFeature values." }
+        check("io.github.s52.core.geometry.EncGeometry" in adapter) { "Phase 6 adapter must create real S-52 EncGeometry values." }
+        check("S52PortrayalSession" in adapter) { "Phase 6 adapter must call the real S-52 portrayal session." }
+        check("S52DrawCommand" in adapter) { "Phase 6 adapter must expose real S-52 draw commands." }
+        check("transcript" in adapter) { "Phase 6 adapter must expose transcript diagnostics." }
 
         val ci = layout.projectDirectory.file(".github/workflows/ci.yml").asFile.readText()
-        check("s52-kotlin-webgl-release-maven-0.3.0.zip" in ci) { "CI should keep downloading the s52-kotlin-webgl v0.3.0 Maven release ZIP for JVM/local bridge validation." }
+        check("s52-kotlin-webgl-release-maven-0.3.0.zip" in ci) { "CI should keep downloading the s52-kotlin-webgl v0.3.0 Maven release ZIP." }
         check("ed4ece6664670fec275f1d3d8d2ff52f1dfa54384501ebd97553c670e9687a79" in ci) { "CI must verify the s52 Maven release checksum." }
 
         val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
@@ -236,7 +244,7 @@ tasks.register("phase6Audit") {
 
 tasks.register("phase6Check") {
     group = "verification"
-    description = "Runs Phase 6 S-52 adapter checks and all previous phase checks. Requires the s52 v0.3.0 Maven release repository."
+    description = "Runs Phase 6 real S-52 adapter checks and all previous phase checks. Requires the s52 v0.3.0 Maven release repository."
     dependsOn("phase5Check", "phase6Audit", ":s57-s52-adapter:build")
 }
 
@@ -312,7 +320,7 @@ tasks.register("phase8Check") {
 
 tasks.register("phase9Audit") {
     group = "verification"
-    description = "Checks Phase 9 high-level engine facade and JS-safe S-52 adapter boundary."
+    description = "Checks Phase 9 high-level engine facade and S-52 adapter boundary."
 
     doLast {
         val requiredFiles = listOf(
@@ -329,7 +337,8 @@ tasks.register("phase9Audit") {
         check("RenderedArtifactDiagnostics" in engine) { "Phase 9 engine must expose render diagnostics." }
 
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("io.github.s52" !in adapter) { "Common adapter must remain JS-safe and not directly import S-52 classes." }
+        check("io.github.s52.core.model.EncFeature" in adapter) { "Common adapter must create real S-52 EncFeature values." }
+        check("S52PortrayalSession" in adapter) { "Common adapter must keep the real S-52 portrayal session boundary." }
 
         val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
         check("Phase 9 — high-level engine facade" in phases) { "docs/PHASES.md must document Phase 9." }
