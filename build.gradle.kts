@@ -276,3 +276,35 @@ tasks.register("phase7Check") {
     description = "Runs Phase 7 static WebGL chart render checks and all previous phase checks."
     dependsOn("phase6Check", "phase7Audit", ":s57-render-webgl:build", ":demo:build")
 }
+
+
+tasks.register("phase8Audit") {
+    group = "verification"
+    description = "Checks Phase 8 rendered artifact diagnostics and Gradle repository-mode compatibility with Kotlin/JS Node setup."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderedArtifactDiagnostics.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/RenderedArtifactDiagnosticsTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 8 files: $missing" }
+
+        val settings = layout.projectDirectory.file("settings.gradle.kts").asFile.readText()
+        check("RepositoriesMode.PREFER_PROJECT" in settings) { "settings.gradle.kts must allow Kotlin/JS Node setup to add its Node distribution repository." }
+
+        val diagnostics = layout.projectDirectory.file("s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderedArtifactDiagnostics.kt").asFile.readText()
+        check("RenderedArtifactReport" in diagnostics) { "Phase 8 must expose RenderedArtifactReport." }
+        check("toSvgSnapshot" in diagnostics) { "Phase 8 must expose SVG snapshot generation." }
+        check("validateMinimum" in diagnostics) { "Phase 8 diagnostics must validate empty/fallback-heavy render artifacts." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 8 — rendered artifact diagnostics" in phases) { "docs/PHASES.md must document Phase 8." }
+    }
+}
+
+tasks.register("phase8Check") {
+    group = "verification"
+    description = "Runs Phase 8 rendered artifact diagnostics checks and all previous phase checks."
+    dependsOn("phase7Check", "phase8Audit", ":s57-render-webgl:build")
+}

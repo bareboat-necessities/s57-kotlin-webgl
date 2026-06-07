@@ -91,3 +91,10 @@ The library now has a static chart-frame pipeline: indexed S-57 features can be
 queried, projected to a fixed viewport, hit-tested, and drawn by the browser
 WebGL shell. This is intentionally a rendering primitive for a future larger
 chartplotter, not a complete chartplotter UI.
+
+
+```bash
+gradle phase8Check
+```
+
+Phase 8 adds rendered artifact diagnostics and SVG snapshot export for static chart frames.

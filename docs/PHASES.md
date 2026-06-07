@@ -172,3 +172,11 @@ Acceptance:
   optional center crosshair.
 - Gradle repository declarations stay in `settings.gradle.kts` so CI works with
   `RepositoriesMode.FAIL_ON_PROJECT_REPOS`.
+
+
+## Phase 8 — rendered artifact diagnostics
+
+Adds renderer-independent artifact diagnostics for prepared static chart frames:
+feature counts, visible geometry counts, empty geometry counts, center-crosshair hit counts,
+depth-mesh counts, fallback-placeholder counts, and simple SVG snapshot export for CI/debugging.
+This phase also keeps Gradle repository mode compatible with Kotlin/JS Node setup.

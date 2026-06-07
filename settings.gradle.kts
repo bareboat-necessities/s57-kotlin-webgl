@@ -7,7 +7,7 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         val configuredS52Repo = providers.gradleProperty("s52MavenRepo").orNull
             ?: System.getenv("S52_MAVEN_REPO")

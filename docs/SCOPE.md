@@ -65,3 +65,8 @@ allowed to query the local index, project features, draw a static WebGL image,
 and report hit-test results. It is not allowed to grow into full chartplotter
 state management: no quilting, live pan/zoom controller, AIS, NMEA, ownship,
 routes, alarms, or navigation workflow belongs in this project.
+
+
+## Rendered artifact diagnostics
+
+The library exposes lightweight diagnostics for static rendered frames so downstream projects can fail early when a chart render is empty, fallback-heavy, or missing depth/crosshair information. These diagnostics are not chartplotter UI features; they are validation and debugging tools for the parsing/indexing/rendering pipeline.
