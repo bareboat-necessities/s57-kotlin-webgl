@@ -111,3 +111,14 @@ available.
 ```bash
 gradle phase9Check
 ```
+
+
+## Phase 10 status
+
+The library now has an end-to-end byte import boundary:
+
+```text
+S-57/ENC bytes -> ISO8211 -> raw S-57 records -> geometry dataset -> indexable static render input
+```
+
+Browser code can use `BrowserS57FileImporter` to read a selected `File` and call `S57WebGlEngine.importS57Bytes(...)`.

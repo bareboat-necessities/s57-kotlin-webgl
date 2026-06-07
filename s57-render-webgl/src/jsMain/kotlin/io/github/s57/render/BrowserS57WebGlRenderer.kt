@@ -132,11 +132,12 @@ class BrowserS57WebGlRenderer(
 
         private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
             if (points.isEmpty()) return
-            val data = Float32Array(points.size * 2)
+            val raw = Array(points.size * 2) { 0.0f }
             points.forEachIndexed { index, point ->
-                data[index * 2] = ((point.x / canvas.width.toDouble()) * 2.0 - 1.0).toFloat()
-                data[index * 2 + 1] = (1.0 - (point.y / canvas.height.toDouble()) * 2.0).toFloat()
+                raw[index * 2] = ((point.x / canvas.width.toDouble()) * 2.0 - 1.0).toFloat()
+                raw[index * 2 + 1] = (1.0 - (point.y / canvas.height.toDouble()) * 2.0).toFloat()
             }
+            val data = Float32Array(raw)
             gl.bufferData(WebGLRenderingContext.ARRAY_BUFFER, data, WebGLRenderingContext.STREAM_DRAW)
             gl.uniform4f(colorLocation, color[0], color[1], color[2], color[3])
             gl.drawArrays(mode, 0, points.size)

@@ -341,3 +341,37 @@ tasks.register("phase9Check") {
     description = "Runs Phase 9 engine facade checks and all previous phase checks."
     dependsOn("phase8Check", "phase9Audit", ":s57-render-webgl:build", ":demo:build")
 }
+
+
+tasks.register("phase10Audit") {
+    group = "verification"
+    description = "Checks Phase 10 end-to-end S-57 import pipeline and browser file-import boundary."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/import/S57ImportPipeline.kt",
+            "s57-core/src/commonTest/kotlin/io/github/s57/core/import/S57ImportPipelineTest.kt",
+            "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57FileImporter.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 10 files: $missing" }
+
+        val input = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserChartInput.kt").asFile.readText()
+        check("fun dynamic." !in input) { "Kotlin/JS input code must not use dynamic extension receivers." }
+
+        val browserRenderer = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt").asFile.readText()
+        check("Float32Array(raw)" in browserRenderer) { "Browser renderer must fill Float32Array through a Kotlin Array to satisfy Kotlin/JS typed-array APIs." }
+
+        val engine = layout.projectDirectory.file("s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57WebGlEngine.kt").asFile.readText()
+        check("importS57Bytes" in engine) { "Phase 10 engine must expose importS57Bytes for browser file payloads." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 10 — end-to-end import pipeline" in phases) { "docs/PHASES.md must document Phase 10." }
+    }
+}
+
+tasks.register("phase10Check") {
+    group = "verification"
+    description = "Runs Phase 10 import-pipeline checks and all previous phase checks."
+    dependsOn("phase9Check", "phase10Audit", ":s57-core:build", ":s57-render-webgl:build", ":demo:build")
+}

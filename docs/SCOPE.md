@@ -80,3 +80,8 @@ and generate renderer-independent diagnostics.
 
 The facade remains intentionally static. It does not add chart quilting, AIS,
 NMEA, ownship state, route planning, or continuous pan/zoom UX.
+
+
+## Phase 10 import boundary
+
+The project includes a reusable end-to-end import path for one ENC/S-57 byte payload via `S57ImportPipeline` and `S57WebGlEngine.importS57Bytes(...)`.  This does not add chart quilting or navigation workflow; it only turns a file payload into an indexed/static-renderable dataset.

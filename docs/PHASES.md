@@ -200,3 +200,8 @@ Acceptance:
 - `S57WebGlEngine.render` returns a static frame plus `RenderedArtifactReport`.
 - Center-crosshair hit queries can be performed through the facade.
 - Common/JS source sets compile without direct S-52 imports.
+
+
+## Phase 10 — end-to-end import pipeline
+
+Adds the first reusable import pipeline from S-57/ENC bytes to a decoded geometry dataset ready for the browser index.  The browser boundary can read a selected `File` into bytes and pass it to `S57WebGlEngine.importS57Bytes(...)`.  This remains a static chart engine layer: no quilting, AIS, NMEA, ownship, routing, or full chartplotter UX.

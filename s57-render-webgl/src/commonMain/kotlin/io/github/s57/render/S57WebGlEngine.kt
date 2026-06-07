@@ -3,6 +3,8 @@ package io.github.s57.render
 import io.github.s57.core.GeoPoint
 import io.github.s57.core.S57CellSummary
 import io.github.s57.core.S57Dataset
+import io.github.s57.core.import.S57ImportPipeline
+import io.github.s57.core.import.S57ImportResult
 import io.github.s57.index.InMemoryS57IndexStore
 import io.github.s57.index.S57IndexImportReport
 import io.github.s57.index.S57IndexStats
@@ -18,14 +20,25 @@ import io.github.s57.index.S57IndexStore
  */
 class S57WebGlEngine(
     private val indexStore: S57IndexStore = InMemoryS57IndexStore(),
-    private val staticRenderer: S57StaticChartRenderer = S57StaticChartRenderer(indexStore)
+    private val staticRenderer: S57StaticChartRenderer = S57StaticChartRenderer(indexStore),
+    private val importPipeline: S57ImportPipeline = S57ImportPipeline()
 ) {
+    fun importS57Bytes(bytes: ByteArray): S57EngineImportResult {
+        val imported = importPipeline.importBytes(bytes)
+        return importDataset(imported.dataset, imported)
+    }
+
     fun importDataset(dataset: S57Dataset): S57EngineImportResult {
+        return importDataset(dataset, null)
+    }
+
+    private fun importDataset(dataset: S57Dataset, sourceImport: S57ImportResult?): S57EngineImportResult {
         val report = indexStore.importDataset(dataset)
         return S57EngineImportResult(
             cell = dataset.summary,
             indexReport = report,
-            stats = indexStore.stats()
+            stats = indexStore.stats(),
+            sourceImport = sourceImport
         )
     }
 
@@ -53,10 +66,13 @@ class S57WebGlEngine(
 data class S57EngineImportResult(
     val cell: S57CellSummary,
     val indexReport: S57IndexImportReport,
-    val stats: S57IndexStats
+    val stats: S57IndexStats,
+    val sourceImport: S57ImportResult? = null
 ) {
-    fun toPlainText(): String =
-        "engineImport cell=${cell.cellId} features=${indexReport.featureCount} indexed=${indexReport.indexedFeatureCount} cells=${stats.cellCount} totalFeatures=${stats.featureCount}"
+    fun toPlainText(): String = buildString {
+        append("engineImport cell=${cell.cellId} features=${indexReport.featureCount} indexed=${indexReport.indexedFeatureCount} cells=${stats.cellCount} totalFeatures=${stats.featureCount}")
+        sourceImport?.let { append(" rawVectors=${it.raw.vectors.size} geometryDiagnostics=${it.geometryDiagnosticCount}") }
+    }
 }
 
 data class S57EngineRenderResult(
