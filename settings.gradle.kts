@@ -6,6 +6,25 @@ pluginManagement {
     }
 }
 
+val configuredS52SourceDir = providers.gradleProperty("s52SourceDir").orNull
+    ?: System.getenv("S52_SOURCE_DIR")
+
+if (!configuredS52SourceDir.isNullOrBlank()) {
+    val s52SourceDir = file(configuredS52SourceDir)
+    if (s52SourceDir.isDirectory) {
+        includeBuild(s52SourceDir) {
+            dependencySubstitution {
+                substitute(module("io.github.s52:s52-api")).using(project(":s52-api"))
+                substitute(module("io.github.s52:s52-core")).using(project(":s52-core"))
+                substitute(module("io.github.s52:s52-catalog")).using(project(":s52-catalog"))
+                substitute(module("io.github.s52:s52-preslib")).using(project(":s52-preslib"))
+                substitute(module("io.github.s52:s52-csp")).using(project(":s52-csp"))
+                substitute(module("io.github.s52:s52-render-webgl")).using(project(":s52-render-webgl"))
+            }
+        }
+    }
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
