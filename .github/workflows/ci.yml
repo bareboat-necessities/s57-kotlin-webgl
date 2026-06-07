@@ -28,5 +28,5 @@ jobs:
           echo "$S52_RELEASE_MAVEN_SHA256  /tmp/s52-kotlin-webgl-release-maven.zip" | sha256sum -c -
           unzip -q /tmp/s52-kotlin-webgl-release-maven.zip -d build/s52-maven
           find build/s52-maven -maxdepth 4 -type f | sort | head -40
-      - name: Build Phase 8
-        run: gradle phase8Check -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven --stacktrace
+      - name: Build Phase 9
+        run: gradle phase9Check -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven --stacktrace

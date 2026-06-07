@@ -70,3 +70,13 @@ routes, alarms, or navigation workflow belongs in this project.
 ## Rendered artifact diagnostics
 
 The library exposes lightweight diagnostics for static rendered frames so downstream projects can fail early when a chart render is empty, fallback-heavy, or missing depth/crosshair information. These diagnostics are not chartplotter UI features; they are validation and debugging tools for the parsing/indexing/rendering pipeline.
+
+## Phase 9 facade scope
+
+The library now exposes a small `S57WebGlEngine` facade for static use by a
+future chartplotter project. The facade can import already-decoded S-57 datasets,
+query indexed cells, prepare a fixed chart frame, run center-crosshair hit tests,
+and generate renderer-independent diagnostics.
+
+The facade remains intentionally static. It does not add chart quilting, AIS,
+NMEA, ownship state, route planning, or continuous pan/zoom UX.

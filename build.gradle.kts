@@ -220,12 +220,13 @@ tasks.register("phase6Audit") {
         check(missing.isEmpty()) { "Missing Phase 6 files: $missing" }
 
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("EncFeature" in adapter) { "Phase 6 adapter must produce s52 EncFeature objects." }
-        check("S52PortrayalEngine" in adapter) { "Phase 6 adapter must expose a portrayal helper using s52-kotlin-webgl." }
-        check("S52DrawCommandTranscript" in adapter) { "Phase 6 adapter must expose command transcript diagnostics." }
+        check("S57PortrayalFeature" in adapter) { "Phase 6 adapter must produce S-52-shaped portrayal feature objects." }
+        check("S57PortrayalPrimitive" in adapter) { "Phase 6 adapter must preserve point/line/area primitive type." }
+        check("transcript" in adapter) { "Phase 6 adapter must expose transcript diagnostics without requiring the S-52 runtime on JS." }
+        check("io.github.s52" !in adapter) { "Common/JS adapter code must not import S-52 directly until a JS klib artifact is available." }
 
         val ci = layout.projectDirectory.file(".github/workflows/ci.yml").asFile.readText()
-        check("s52-kotlin-webgl-release-maven-0.3.0.zip" in ci) { "CI must use the s52-kotlin-webgl v0.3.0 Maven release ZIP." }
+        check("s52-kotlin-webgl-release-maven-0.3.0.zip" in ci) { "CI should keep downloading the s52-kotlin-webgl v0.3.0 Maven release ZIP for JVM/local bridge validation." }
         check("ed4ece6664670fec275f1d3d8d2ff52f1dfa54384501ebd97553c670e9687a79" in ci) { "CI must verify the s52 Maven release checksum." }
 
         val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
@@ -307,4 +308,36 @@ tasks.register("phase8Check") {
     group = "verification"
     description = "Runs Phase 8 rendered artifact diagnostics checks and all previous phase checks."
     dependsOn("phase7Check", "phase8Audit", ":s57-render-webgl:build")
+}
+
+tasks.register("phase9Audit") {
+    group = "verification"
+    description = "Checks Phase 9 high-level engine facade and JS-safe S-52 adapter boundary."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57WebGlEngine.kt",
+            "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/S57WebGlEngineTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 9 files: $missing" }
+
+        val engine = layout.projectDirectory.file("s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57WebGlEngine.kt").asFile.readText()
+        check("class S57WebGlEngine" in engine) { "Phase 9 must expose S57WebGlEngine." }
+        check("importDataset" in engine) { "Phase 9 engine must expose dataset import." }
+        check("centerCrosshairHits" in engine) { "Phase 9 engine must expose center-crosshair query." }
+        check("RenderedArtifactDiagnostics" in engine) { "Phase 9 engine must expose render diagnostics." }
+
+        val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
+        check("io.github.s52" !in adapter) { "Common adapter must remain JS-safe and not directly import S-52 classes." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 9 — high-level engine facade" in phases) { "docs/PHASES.md must document Phase 9." }
+    }
+}
+
+tasks.register("phase9Check") {
+    group = "verification"
+    description = "Runs Phase 9 engine facade checks and all previous phase checks."
+    dependsOn("phase8Check", "phase9Audit", ":s57-render-webgl:build", ":demo:build")
 }

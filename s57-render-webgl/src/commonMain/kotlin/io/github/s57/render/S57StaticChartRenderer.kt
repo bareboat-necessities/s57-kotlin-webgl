@@ -1,10 +1,5 @@
 package io.github.s57.render
 
-import io.github.s52.core.draw.S52DrawCommand
-import io.github.s52.core.draw.S52DrawCommandTranscript
-import io.github.s52.core.engine.S52PortrayalEngine
-import io.github.s52.core.settings.MarinerSettings
-import io.github.s52.core.settings.PortrayalContext
 import io.github.s57.adapter.S57ToS52Adapter
 import io.github.s57.index.S57FeatureQuery
 import io.github.s57.index.S57IndexStore
@@ -58,32 +53,11 @@ class S57StaticChartRenderer(
             depthMesh = depthMesh
         )
         val hits = if (request.centerCrosshair.enabled && request.centerCrosshair.queryOnRender) {
-            frameWithoutHits.hitTester().centerCrosshairHitTest(request.camera)
+            frameWithoutHits.hitTester().centerCrosshairHitTest(request.camera, request.centerCrosshair.hitRadiusPx)
         } else {
             emptyList()
         }
         return frameWithoutHits.copy(centerCrosshairHits = hits)
     }
 
-    fun portrayFrame(
-        request: ChartRenderRequest,
-        engine: S52PortrayalEngine,
-        settings: MarinerSettings,
-        context: PortrayalContext
-    ): S57PortrayedChartFrame {
-        val frame = prepareFrame(request)
-        val features = indexStore.queryFeatures(S57FeatureQuery(request.cellId, request.bounds))
-        val portrayed = adapter.portray(features, engine, settings, context)
-        return S57PortrayedChartFrame(
-            frame = frame,
-            commands = portrayed.commands,
-            transcript = portrayed.transcript.ifBlank { S52DrawCommandTranscript.serialize(portrayed.commands) }
-        )
-    }
 }
-
-data class S57PortrayedChartFrame(
-    val frame: StaticChartFrame,
-    val commands: List<S52DrawCommand>,
-    val transcript: String
-)

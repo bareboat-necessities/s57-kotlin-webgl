@@ -98,3 +98,16 @@ gradle phase8Check
 ```
 
 Phase 8 adds rendered artifact diagnostics and SVG snapshot export for static chart frames.
+
+## Phase 9 status
+
+Phase 9 adds `S57WebGlEngine`, a small facade for importing decoded S-57 datasets,
+listing indexed cells, rendering fixed chart frames, querying the center crosshair,
+and exporting diagnostics/SVG snapshots. The S-52 adapter common source now uses a
+JS-safe intermediate portrayal model so Kotlin/JS can compile while the direct
+S-52 runtime bridge remains a later integration step when JS artifacts are
+available.
+
+```bash
+gradle phase9Check
+```

@@ -180,3 +180,23 @@ Adds renderer-independent artifact diagnostics for prepared static chart frames:
 feature counts, visible geometry counts, empty geometry counts, center-crosshair hit counts,
 depth-mesh counts, fallback-placeholder counts, and simple SVG snapshot export for CI/debugging.
 This phase also keeps Gradle repository mode compatible with Kotlin/JS Node setup.
+
+## Phase 9 — high-level engine facade
+
+Adds a small reusable engine facade around the existing lower-level pieces. The
+facade imports decoded `S57Dataset` values into the index, lists stored cells,
+prepares static chart frames, exposes center-crosshair hit queries, and returns
+rendered-artifact diagnostics/snapshots.
+
+This phase also fixes the S-52 dependency boundary: the common/JS adapter now
+emits S-52-shaped intermediate portrayal features without importing `io.github.s52`
+classes directly. The v0.3.0 S-52 release artifacts are still downloaded and
+checksum-verified in CI for JVM/local bridge work, but the browser build no
+longer depends on unavailable JS S-52 klib artifacts.
+
+Acceptance:
+
+- `S57WebGlEngine.importDataset` imports decoded datasets through the Phase 5 index.
+- `S57WebGlEngine.render` returns a static frame plus `RenderedArtifactReport`.
+- Center-crosshair hit queries can be performed through the facade.
+- Common/JS source sets compile without direct S-52 imports.

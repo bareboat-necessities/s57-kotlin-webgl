@@ -40,7 +40,8 @@ enum class ScrollDirection { Up, Down, Left, Right, None }
 data class CenterCrosshairConfig(
     val enabled: Boolean = false,
     val queryOnRender: Boolean = false,
-    val sizePx: Double = 28.0
+    val sizePx: Double = 28.0,
+    val hitRadiusPx: Double = 12.0
 )
 
 data class DepthMeshConfig(
