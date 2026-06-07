@@ -47,6 +47,7 @@ gradle phase0Check
 gradle phase1Check
 gradle phase2Check
 gradle phase3Check
+gradle phase4Check
 ```
 
 
@@ -58,3 +59,8 @@ Phase 2 adds the first real data parser layer: `s57-iso8211` now reads ISO/IEC 8
 ## Phase 3 status
 
 Phase 3 adds the first S-57 semantic layer on top of ISO8211: dataset metadata, feature records (`FRID`/`FOID`/`ATTF`/`NATF`/`FSPT`), vector records (`VRID` plus coordinate counts), object-class counts, and a JVM raw-dump diagnostic. Geometry reconstruction is still reserved for Phase 4.
+
+
+## Phase 4 status
+
+Phase 4 reconstructs basic geometries from raw S-57 feature/vector records: points, multipoints, line strings, simple area rings/polygons, feature bounds, dataset bounds, orientation handling, and diagnostics for missing vectors. IndexedDB and WebGL chart rendering remain later phases.

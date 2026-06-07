@@ -47,3 +47,8 @@ Phase 2 implements the reusable ISO8211 reader. It parses record structure, dire
 ## Phase 3 addition
 
 Phase 3 decodes raw S-57 semantics from ISO8211 records: dataset metadata, feature/vector records, raw attributes, and feature-to-spatial references. It intentionally stops before geometry reconstruction, panning/zooming UI, quilting, AIS, or NMEA integration.
+
+
+## Phase 4 geometry reconstruction
+
+The core library reconstructs basic S-57 geometries from decoded feature/vector records: point features, multipoint soundings, line strings, simple polygon rings, feature bounds, dataset bounds, and diagnostics for unresolved spatial references. This is still not chart quilting, pan/zoom UX, AIS, or NMEA handling.

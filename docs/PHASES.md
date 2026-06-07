@@ -83,11 +83,25 @@ Acceptance:
 
 ## Phase 4 — geometry reconstruction
 
-- Points.
-- Multipoint soundings.
-- Lines.
-- Area rings.
-- Bounding boxes.
+Turns Phase 3 raw feature/vector records into usable chart geometries.
+
+Deliverables:
+
+- SG2D / SG3D raw coordinate preservation.
+- COMF-scaled lon/lat conversion.
+- Point and multipoint feature geometries.
+- LineString reconstruction from FSPT edge/vector references.
+- Basic area ring / polygon reconstruction.
+- Orientation handling for reversed references.
+- Dataset and feature bounding boxes.
+- Geometry diagnostics for missing vectors and empty features.
+
+Acceptance:
+
+- DEPARE-like features can produce polygons.
+- DEPCNT-like features can produce line strings.
+- SOUNDG / buoy-like features can produce points or multipoints.
+- Missing vector references are reported without crashing the decode pipeline.
 
 ## Phase 5 — IndexedDB storage and indexing
 

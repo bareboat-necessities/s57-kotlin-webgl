@@ -93,15 +93,75 @@ class S57RawDecoder(
         val rcid = vrid.u32(1)
         val rver = vrid.u16(5)
         val ruin = S57UpdateInstruction.fromCode(vrid.u8(7))
+        val sg2d = record.fields("SG2D").flatMap(::decodeSg2dCoordinates)
+        val sg3d = record.fields("SG3D").flatMap(::decodeSg3dCoordinates)
         return S57RawVectorRecord(
             id = rcid,
             recordName = S57RecordName(rcnm, rcid),
             version = rver,
             updateInstruction = ruin,
-            twoDimensionalCoordinateCount = record.fields("SG2D").sumOf { it.content.size / 8 },
-            threeDimensionalCoordinateCount = record.fields("SG3D").sumOf { it.content.size / 12 },
+            twoDimensionalCoordinates = sg2d,
+            threeDimensionalCoordinates = sg3d,
             rawFieldTags = record.fields.map { it.tag }.toSet()
         )
+    }
+
+
+    private fun decodeSg2dCoordinates(field: Iso8211Field): List<S57RawCoordinate> {
+        val fromText = decodeTextCoordinates(field.text())
+        if (fromText.isNotEmpty()) return fromText
+        val data = field.content
+        val result = mutableListOf<S57RawCoordinate>()
+        var cursor = 0
+        while (cursor + 8 <= data.size) {
+            val y = data.i32(cursor)
+            val x = data.i32(cursor + 4)
+            result += S57RawCoordinate(yRaw = y, xRaw = x)
+            cursor += 8
+        }
+        return result
+    }
+
+    private fun decodeSg3dCoordinates(field: Iso8211Field): List<S57RawCoordinate> {
+        val fromText = decodeTextCoordinates(field.text())
+        if (fromText.isNotEmpty()) return fromText
+        val data = field.content
+        val result = mutableListOf<S57RawCoordinate>()
+        var cursor = 0
+        while (cursor + 12 <= data.size) {
+            val y = data.i32(cursor)
+            val x = data.i32(cursor + 4)
+            val z = data.i32(cursor + 8)
+            result += S57RawCoordinate(yRaw = y, xRaw = x, zRaw = z)
+            cursor += 12
+        }
+        return result
+    }
+
+    /**
+     * Diagnostic/test convenience parser for textual coordinate fixtures.
+     * Supported forms include:
+     *   Y=407000000,X=-740000000;Y=407010000,X=-739990000
+     *   -740000000,407000000;-739990000,407010000  (X,Y pairs)
+     */
+    private fun decodeTextCoordinates(text: String): List<S57RawCoordinate> {
+        val cleaned = text.replace('\u001e', ';').replace('\u001f', ';').trim()
+        if (cleaned.isBlank()) return emptyList()
+        val groups = cleaned.split(';', '|', '\n').map { it.trim() }.filter { it.isNotBlank() }
+        val result = mutableListOf<S57RawCoordinate>()
+        for (group in groups) {
+            val pairs = keyValuePairs(group)
+            if (pairs.containsKey("X") || pairs.containsKey("Y") || pairs.containsKey("XCOO") || pairs.containsKey("YCOO")) {
+                val x = (pairs["X"] ?: pairs["XCOO"] ?: pairs["LON"])?.toLongOrNull()
+                val y = (pairs["Y"] ?: pairs["YCOO"] ?: pairs["LAT"])?.toLongOrNull()
+                val z = (pairs["Z"] ?: pairs["VE3D"] ?: pairs["DEPTH"])?.toLongOrNull()
+                if (x != null && y != null) result += S57RawCoordinate(yRaw = y, xRaw = x, zRaw = z)
+            } else if (',' in group) {
+                val nums = group.split(',').mapNotNull { it.trim().toLongOrNull() }
+                if (nums.size >= 2) result += S57RawCoordinate(yRaw = nums[1], xRaw = nums[0], zRaw = nums.getOrNull(2))
+            }
+        }
+        return result
     }
 
     private fun decodeFoid(field: Iso8211Field): S57FeatureObjectIdentifier? {
@@ -216,6 +276,9 @@ class S57RawDecoder(
     private fun ByteArray.u16(offset: Int): Int = u8(offset) or (u8(offset + 1) shl 8)
     private fun ByteArray.u32(offset: Int): Long =
         u8(offset).toLong() or (u8(offset + 1).toLong() shl 8) or (u8(offset + 2).toLong() shl 16) or (u8(offset + 3).toLong() shl 24)
+
+    private fun ByteArray.i32(offset: Int): Long =
+        (u32(offset).toInt()).toLong()
 
     private fun ByteArray.indexOfTerminator(start: Int): Int {
         var i = start

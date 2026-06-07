@@ -148,3 +148,33 @@ tasks.register("phase3Check") {
     dependsOn("phase2Check", "phase3Audit", ":s57-core:build")
 }
 
+
+tasks.register("phase4Audit") {
+    group = "verification"
+    description = "Checks Phase 4 S-57 geometry reconstruction, bounds, and diagnostics."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/geometry/S57GeometryBuilder.kt",
+            "s57-core/src/commonTest/kotlin/io/github/s57/core/geometry/S57GeometryBuilderTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 4 files: $missing" }
+
+        val builder = layout.projectDirectory.file("s57-core/src/commonMain/kotlin/io/github/s57/core/geometry/S57GeometryBuilder.kt").asFile.readText()
+        check("S57GeometryBuilder" in builder) { "Phase 4 must include S57GeometryBuilder." }
+        check("S57Geometry.Polygon" in builder) { "Phase 4 must reconstruct area polygons." }
+        check("S57Geometry.LineString" in builder) { "Phase 4 must reconstruct line strings." }
+        check("S57GeometryDiagnostic" in builder) { "Phase 4 must expose geometry diagnostics." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 4 — geometry reconstruction" in phases) { "docs/PHASES.md must document Phase 4." }
+    }
+}
+
+tasks.register("phase4Check") {
+    group = "verification"
+    description = "Runs Phase 4 geometry reconstruction checks and all previous phase checks."
+    dependsOn("phase3Check", "phase4Audit", ":s57-core:build")
+}
+

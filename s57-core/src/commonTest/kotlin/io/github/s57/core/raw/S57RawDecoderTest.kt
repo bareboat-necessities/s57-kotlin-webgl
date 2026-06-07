@@ -52,6 +52,7 @@ class S57RawDecoderTest {
         assertEquals(88, vector.id)
         assertEquals(2, vector.twoDimensionalCoordinateCount)
         assertEquals(0, vector.threeDimensionalCoordinateCount)
+        assertEquals(2, vector.twoDimensionalCoordinates.size)
     }
 
     @Test

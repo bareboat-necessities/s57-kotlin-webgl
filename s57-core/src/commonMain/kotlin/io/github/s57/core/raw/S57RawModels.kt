@@ -23,13 +23,15 @@ data class S57RawDataset(
         .eachCount()
 
     fun toFeatureStubs(): List<S57Feature> = features.map { feature ->
-        S57Feature(
-            id = feature.id,
-            objectClass = feature.objectClassAcronym,
-            attributes = feature.attributes.associate { attr -> attr.acronym to S57Value.Text(attr.value) },
-            geometry = S57Geometry.Empty
-        )
+        feature.toFeature(S57Geometry.Empty)
     }
+
+    fun S57RawFeatureRecord.toFeature(geometry: S57Geometry = S57Geometry.Empty): S57Feature = S57Feature(
+        id = id,
+        objectClass = objectClassAcronym,
+        attributes = (attributes + nationalAttributes).associate { attr -> attr.acronym to S57Value.Text(attr.value) },
+        geometry = geometry
+    )
 
     fun summary(): S57CellSummary = S57CellSummary(
         cellId = metadata.cellName.ifBlank { "UNKNOWN" },
@@ -73,9 +75,25 @@ data class S57RawVectorRecord(
     val recordName: S57RecordName,
     val version: Int,
     val updateInstruction: S57UpdateInstruction,
-    val twoDimensionalCoordinateCount: Int = 0,
-    val threeDimensionalCoordinateCount: Int = 0,
+    val twoDimensionalCoordinates: List<S57RawCoordinate> = emptyList(),
+    val threeDimensionalCoordinates: List<S57RawCoordinate> = emptyList(),
     val rawFieldTags: Set<String> = emptySet()
+) {
+    val twoDimensionalCoordinateCount: Int get() = twoDimensionalCoordinates.size
+    val threeDimensionalCoordinateCount: Int get() = threeDimensionalCoordinates.size
+    val coordinates: List<S57RawCoordinate> get() = if (threeDimensionalCoordinates.isNotEmpty()) threeDimensionalCoordinates else twoDimensionalCoordinates
+}
+
+/**
+ * Raw S-57 coordinate values as encoded in SG2D/SG3D.  S-57 stores Y then X,
+ * scaled by dataset COMF; SG3D also carries an optional vertical value scaled
+ * by SOMF.  Conversion to lon/lat belongs in the geometry builder so the raw
+ * decoder stays faithful to the source record.
+ */
+data class S57RawCoordinate(
+    val yRaw: Long,
+    val xRaw: Long,
+    val zRaw: Long? = null
 )
 
 data class S57RawRecord(
