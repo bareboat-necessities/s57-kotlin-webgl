@@ -52,3 +52,8 @@ Phase 3 decodes raw S-57 semantics from ISO8211 records: dataset metadata, featu
 ## Phase 4 geometry reconstruction
 
 The core library reconstructs basic S-57 geometries from decoded feature/vector records: point features, multipoint soundings, line strings, simple polygon rings, feature bounds, dataset bounds, and diagnostics for unresolved spatial references. This is still not chart quilting, pan/zoom UX, AIS, or NMEA handling.
+
+
+## Phase 5 indexing scope
+
+`s57-kotlin-webgl` owns basic browser-side indexing for decoded S-57 charts.  The first index is intentionally simple: fixed lon/lat spatial bins over feature bounding boxes, backed by a common in-memory implementation and a browser IndexedDB schema boundary.  This makes static chart render requests efficient enough for the future WebGL phase while keeping chartplotter-level pan/zoom, quilting, AIS, NMEA, and ownship state out of scope.

@@ -64,3 +64,8 @@ Phase 3 adds the first S-57 semantic layer on top of ISO8211: dataset metadata, 
 ## Phase 4 status
 
 Phase 4 reconstructs basic geometries from raw S-57 feature/vector records: points, multipoints, line strings, simple area rings/polygons, feature bounds, dataset bounds, orientation handling, and diagnostics for missing vectors. IndexedDB and WebGL chart rendering remain later phases.
+
+
+## Current implementation phase
+
+Phase 5 adds the first browser-indexing layer: decoded `S57Dataset` values can be imported into a fixed-grid spatial index, queried by geographic bounds, and prepared for a browser IndexedDB-backed cache.  The project still does not implement chartplotter pan/zoom UX, AIS, NMEA, or quilting.

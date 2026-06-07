@@ -178,3 +178,36 @@ tasks.register("phase4Check") {
     dependsOn("phase3Check", "phase4Audit", ":s57-core:build")
 }
 
+tasks.register("phase5Audit") {
+    group = "verification"
+    description = "Checks Phase 5 IndexedDB-oriented chart cache, spatial bins, and viewport query contracts."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexModels.kt",
+            "s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexStore.kt",
+            "s57-index/src/jsMain/kotlin/io/github/s57/index/BrowserIndexedDbS57IndexStore.kt",
+            "s57-index/src/commonTest/kotlin/io/github/s57/index/S57IndexStoreTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 5 files: $missing" }
+
+        val store = layout.projectDirectory.file("s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexStore.kt").asFile.readText()
+        check("importDataset" in store) { "Phase 5 store must import decoded datasets." }
+        check("S57FeatureQuery" in store) { "Phase 5 store must support structured feature queries." }
+
+        val browser = layout.projectDirectory.file("s57-index/src/jsMain/kotlin/io/github/s57/index/BrowserIndexedDbS57IndexStore.kt").asFile.readText()
+        check("IndexedDB" in browser) { "Phase 5 must include a browser IndexedDB boundary." }
+        check("spatialBins" in browser) { "Phase 5 IndexedDB schema must include spatialBins." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 5 — browser indexing" in phases) { "docs/PHASES.md must document Phase 5." }
+    }
+}
+
+tasks.register("phase5Check") {
+    group = "verification"
+    description = "Runs Phase 5 browser indexing checks and all previous phase checks."
+    dependsOn("phase4Check", "phase5Audit", ":s57-index:build")
+}
+

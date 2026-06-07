@@ -11,6 +11,9 @@ kotlin {
     }
 
     sourceSets {
+        commonMain.dependencies {
+            api(project(":s57-core"))
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }

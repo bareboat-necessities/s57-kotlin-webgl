@@ -127,3 +127,30 @@ Acceptance:
 - Rendered PNG/SVG snapshots.
 - Fallback-placeholder detection.
 - Empty-render detection.
+
+
+## Phase 5 — browser indexing
+
+Goal: persist decoded chart data and query it by geographic bounds without implementing full chartplotter UX.
+
+Deliverables:
+
+- common storage/index contracts
+- deterministic in-memory store for tests and JVM diagnostics
+- fixed-grid spatial bin index
+- `S57FeatureQuery` with bbox, object-class filter, and limit
+- browser IndexedDB schema boundary with stores for cells, features, geometries, and spatial bins
+
+Out of scope:
+
+- chart quilting
+- live pan/zoom controls
+- AIS / NMEA / ownship
+- route planning
+
+Acceptance:
+
+- importing an `S57Dataset` creates cell metadata, stored features, and spatial bins
+- bbox queries return only intersecting features
+- object-class filters and limits are honored
+- IndexedDB schema opener is present in `jsMain`
