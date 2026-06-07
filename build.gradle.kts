@@ -114,3 +114,37 @@ tasks.register("phase2Check") {
     description = "Runs Phase 2 ISO8211 parser checks and all previous phase checks."
     dependsOn("phase1Check", "phase2Audit", ":s57-iso8211:build")
 }
+
+tasks.register("phase3Audit") {
+    group = "verification"
+    description = "Checks Phase 3 S-57 raw decoder, metadata, feature/vector records, and diagnostics."
+
+    doLast {
+        val requiredFiles = listOf(
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawModels.kt",
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDecoder.kt",
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57CatalogLookups.kt",
+            "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDump.kt",
+            "s57-core/src/jvmMain/kotlin/io/github/s57/core/raw/S57RawDumpMain.kt",
+            "s57-core/src/commonTest/kotlin/io/github/s57/core/raw/S57RawDecoderTest.kt"
+        )
+        val missing = requiredFiles.filterNot { layout.projectDirectory.file(it).asFile.isFile }
+        check(missing.isEmpty()) { "Missing Phase 3 files: $missing" }
+
+        val decoder = layout.projectDirectory.file("s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDecoder.kt").asFile.readText()
+        check("FRID" in decoder) { "Phase 3 decoder must decode S-57 FRID feature records." }
+        check("VRID" in decoder) { "Phase 3 decoder must decode S-57 VRID vector records." }
+        check("ATTF" in decoder) { "Phase 3 decoder must decode S-57 ATTF attributes." }
+        check("FSPT" in decoder) { "Phase 3 decoder must preserve S-57 feature-to-spatial references." }
+
+        val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
+        check("Phase 3 — S-57 raw decoder" in phases) { "docs/PHASES.md must document Phase 3." }
+    }
+}
+
+tasks.register("phase3Check") {
+    group = "verification"
+    description = "Runs Phase 3 S-57 raw decoder checks and all previous phase checks."
+    dependsOn("phase2Check", "phase3Audit", ":s57-core:build")
+}
+

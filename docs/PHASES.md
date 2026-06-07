@@ -61,10 +61,25 @@ Acceptance:
 
 ## Phase 3 — S-57 raw decoder
 
-- DSID / DSSI metadata.
-- Feature and vector records.
-- Attribute decoding.
-- Object-class counts.
+Adds the first S-57 semantic layer on top of ISO8211 while still avoiding geometry reconstruction.
+
+Deliverables:
+
+- DSID / DSSI metadata extraction.
+- Feature record decoding from FRID / FOID.
+- Vector record decoding from VRID.
+- Raw attribute decoding from ATTF / NATF.
+- Feature-to-spatial pointer preservation from FSPT.
+- Small built-in object/attribute acronym lookup for common ENC classes.
+- Object-class count diagnostics.
+- JVM raw-dump command entry point.
+
+Acceptance:
+
+- Synthetic S-57-like ISO8211 records decode into dataset metadata, feature records, vector records, raw attributes, and spatial references.
+- Common classes such as DEPARE, DEPCNT, SOUNDG, BOYLAT, BCNLAT, LIGHTS, WRECKS, and OBSTRN are named when their OBJL numeric codes are present.
+- Unknown object/attribute codes are preserved as OBJL_### / ATTL_### instead of being dropped.
+- No area/line geometry reconstruction is required yet.
 
 ## Phase 4 — geometry reconstruction
 

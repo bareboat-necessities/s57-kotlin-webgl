@@ -46,9 +46,15 @@ A larger chartplotter application can use this library later.
 gradle phase0Check
 gradle phase1Check
 gradle phase2Check
+gradle phase3Check
 ```
 
 
 ## Phase 2 status
 
 Phase 2 adds the first real data parser layer: `s57-iso8211` now reads ISO/IEC 8211 record leaders, directory entries, field byte ranges, delimiter-separated subfield chunks, and record dump diagnostics. It still does not decode S-57 feature semantics; that begins in the next phase.
+
+
+## Phase 3 status
+
+Phase 3 adds the first S-57 semantic layer on top of ISO8211: dataset metadata, feature records (`FRID`/`FOID`/`ATTF`/`NATF`/`FSPT`), vector records (`VRID` plus coordinate counts), object-class counts, and a JVM raw-dump diagnostic. Geometry reconstruction is still reserved for Phase 4.
