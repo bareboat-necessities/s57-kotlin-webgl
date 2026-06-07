@@ -220,17 +220,13 @@ tasks.register("phase6Audit") {
         check(missing.isEmpty()) { "Missing Phase 6 files: $missing" }
 
         val adapterBuild = layout.projectDirectory.file("s57-s52-adapter/build.gradle.kts").asFile.readText()
-        check("io.github.s52:s52-api" in adapterBuild) { "s57-s52-adapter must consume the S-52 API artifact." }
-        check("io.github.s52:s52-core" in adapterBuild) { "s57-s52-adapter must consume the S-52 core artifact." }
-        check("io.github.s52:s52-catalog" in adapterBuild) { "s57-s52-adapter must consume the S-52 catalog artifact." }
-        check("io.github.s52:s52-preslib" in adapterBuild) { "s57-s52-adapter must consume the S-52 presentation-library artifact." }
-        check("io.github.s52:s52-csp" in adapterBuild) { "s57-s52-adapter must consume the S-52 CSP artifact." }
+        check("api(project(\":s57-core\"))" in adapterBuild) { "s57-s52-adapter common module must stay JS-safe and depend on s57-core." }
+        check("io.github.s52" !in adapterBuild) { "S-52 artifacts must not be compiled from s57-s52-adapter common/JS source sets." }
 
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("io.github.s52.core.model.EncFeature" in adapter) { "Phase 6 adapter must create real S-52 EncFeature values." }
-        check("io.github.s52.core.geometry.EncGeometry" in adapter) { "Phase 6 adapter must create real S-52 EncGeometry values." }
-        check("S52PortrayalSession" in adapter) { "Phase 6 adapter must call the real S-52 portrayal session." }
-        check("S52DrawCommand" in adapter) { "Phase 6 adapter must expose real S-52 draw commands." }
+        check("S57PortrayalFeature" in adapter) { "Phase 6 adapter must produce S-52-shaped local portrayal feature objects." }
+        check("S57PortrayalPrimitive" in adapter) { "Phase 6 adapter must preserve S-52 primitive shape." }
+        check("S57PortrayalGeometry" in adapter) { "Phase 6 adapter must preserve S-52 geometry shape." }
         check("transcript" in adapter) { "Phase 6 adapter must expose transcript diagnostics." }
 
         val ci = layout.projectDirectory.file(".github/workflows/ci.yml").asFile.readText()
@@ -337,8 +333,8 @@ tasks.register("phase9Audit") {
         check("RenderedArtifactDiagnostics" in engine) { "Phase 9 engine must expose render diagnostics." }
 
         val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("io.github.s52.core.model.EncFeature" in adapter) { "Common adapter must create real S-52 EncFeature values." }
-        check("S52PortrayalSession" in adapter) { "Common adapter must keep the real S-52 portrayal session boundary." }
+        check("io.github.s52" !in adapter) { "Common adapter must remain JS-safe and avoid direct S-52 imports." }
+        check("S57PortrayalFeature" in adapter) { "Common adapter must keep the S-52-shaped local portrayal boundary." }
 
         val phases = layout.projectDirectory.file("docs/PHASES.md").asFile.readText()
         check("Phase 9 — high-level engine facade" in phases) { "docs/PHASES.md must document Phase 9." }
@@ -391,16 +387,17 @@ tasks.register("phase11Audit") {
 
     doLast {
         val adapterBuild = layout.projectDirectory.file("s57-s52-adapter/build.gradle.kts").asFile.readText()
-        check("io.github.s52:s52-api" in adapterBuild) { "s57-s52-adapter must consume the S-52 API artifact." }
-        check("io.github.s52:s52-core" in adapterBuild) { "s57-s52-adapter must consume the S-52 core artifact." }
+        check("io.github.s52" !in adapterBuild) { "s57-s52-adapter must remain JS-safe; real S-52 integration belongs in the browser render module." }
 
         val rendererBuild = layout.projectDirectory.file("s57-render-webgl/build.gradle.kts").asFile.readText()
+        check("io.github.s52:s52-api" in rendererBuild) { "s57-render-webgl JS must consume the S-52 API artifact." }
+        check("io.github.s52:s52-core" in rendererBuild) { "s57-render-webgl JS must consume the S-52 core artifact." }
         check("io.github.s52:s52-render-webgl" in rendererBuild) { "s57-render-webgl must consume the S-52 WebGL renderer artifact." }
 
-        val adapter = layout.projectDirectory.file("s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt").asFile.readText()
-        check("io.github.s52.core.model.EncFeature" in adapter) { "Adapter must create real S-52 EncFeature values." }
-        check("S52PortrayalSession" in adapter) { "Adapter must call the real S-52 portrayal session." }
-        check("S52DrawCommand" in adapter) { "Adapter must expose real S-52 draw commands." }
+        val browserBridge = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52Bridge.kt").asFile.readText()
+        check("io.github.s52.core.model.EncFeature" in browserBridge) { "Browser S-52 bridge must create real S-52 EncFeature values." }
+        check("S52PortrayalSession" in browserBridge) { "Browser S-52 bridge must call the real S-52 portrayal session." }
+        check("S52DrawCommand" in browserBridge) { "Browser S-52 bridge must expose real S-52 draw commands." }
 
         val browserRenderer = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt").asFile.readText()
         check("WebGlS52Renderer" in browserRenderer) { "Browser renderer must call the real S-52 WebGL renderer." }

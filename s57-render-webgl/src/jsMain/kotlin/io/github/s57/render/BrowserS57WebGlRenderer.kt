@@ -1,10 +1,7 @@
 package io.github.s57.render
 
-import io.github.s52.api.S52PortrayalSession
 import io.github.s52.render.webgl.RenderViewport
 import io.github.s52.render.webgl.WebGlS52Renderer
-import io.github.s57.adapter.S57ToS52Adapter
-import io.github.s57.adapter.defaultSettings
 import kotlinx.browser.document
 import org.khronos.webgl.Float32Array
 import org.khronos.webgl.WebGLRenderingContext
@@ -67,8 +64,7 @@ class BrowserS57WebGlRenderer(
      */
     fun renderS52Frame(
         canvasId: String,
-        frame: StaticChartFrame,
-        session: S52PortrayalSession = S52PortrayalSession.s52LibCompat(failOnStaticCompletenessErrors = false)
+        frame: StaticChartFrame
     ): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
@@ -76,16 +72,17 @@ class BrowserS57WebGlRenderer(
         if (sourceFeatures.isEmpty()) {
             return renderFrame(canvasId, frame).copy(message = "No source S-57 features available for S-52 portrayal; used debug geometry renderer")
         }
-        val settings = defaultSettings(frame.request.paletteName, frame.request.scaleDenominator)
-        val portrayed = S57ToS52Adapter().portray(
+        val bridge = BrowserS52Bridge()
+        val portrayed = bridge.portray(
             features = sourceFeatures,
-            session = session,
-            settings = settings
+            paletteName = frame.request.paletteName,
+            scaleDenominator = frame.request.scaleDenominator
         )
         if (portrayed.commands.isEmpty()) {
             return renderFrame(canvasId, frame).copy(message = "S-52 portrayal produced zero commands; used debug geometry renderer diagnostics=${portrayed.diagnostics.size}")
         }
-        val renderer = WebGlS52Renderer(canvas, session.presLib)
+        val renderer = WebGlS52Renderer(canvas, bridge.presLib)
+        val settings = portrayed.settings
         val viewport = RenderViewport(
             west = frame.request.bounds.minLon,
             south = frame.request.bounds.minLat,
