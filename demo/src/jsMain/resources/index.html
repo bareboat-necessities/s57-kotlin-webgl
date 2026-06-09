@@ -5,11 +5,15 @@
   <title>s57-kotlin-webgl demo</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; background: #f6f8fb; color: #16202a; }
-    .shell { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
+    .shell { display: grid; grid-template-columns: 420px 1fr; gap: 20px; align-items: start; }
     .panel { background: white; border: 1px solid #d8dee8; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
     .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+    .row label { min-width: 86px; font-size: 13px; color: #485568; }
+    .row input, .row select { flex: 1; border: 1px solid #b8c3d6; border-radius: 8px; padding: 7px 8px; background: #fff; }
     button { border: 1px solid #b8c3d6; border-radius: 8px; padding: 8px 10px; background: #f8fafc; cursor: pointer; font-weight: 600; }
     button:hover { background: #eef4ff; }
+    .buttonRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     canvas { width: 100%; max-width: 1100px; height: 620px; background: #101923; border-radius: 12px; border: 1px solid #334; }
     pre { white-space: pre-wrap; font-size: 13px; line-height: 1.35; }
     .warning { color: #9a3412; font-weight: 600; }
@@ -23,16 +27,42 @@
   <div class="shell">
     <section class="panel">
       <h2>Load local ENC files</h2>
-      <p class="hint">Select a NOAA ENC <code>.000</code> file. The browser imports it through S57WebGlEngine, indexes the decoded cell, and renders the active cell through the real S-52 WebGL2 path. S-52 atlas resources are resolved from the external s52-kotlin-webgl project at build time.</p>
+      <p class="hint">Select NOAA ENC <code>.000</code> files. The browser imports them through S57WebGlEngine, indexes decoded cells, and renders the active cell through the real S-52 WebGL2 path.</p>
       <input id="fileInput" type="file" multiple />
       <div class="actions">
-        <button id="renderButton">Render selected ENC with S-52</button>
+        <div class="row">
+          <label for="cellSelect">Cell</label>
+          <select id="cellSelect"><option value="">No imported cells</option></select>
+        </div>
+        <div class="row">
+          <label for="paletteSelect">Palette</label>
+          <select id="paletteSelect">
+            <option value="daybright">Day</option>
+            <option value="dusk">Dusk</option>
+            <option value="dark">Dark</option>
+            <option value="dayblackback">Day black</option>
+            <option value="daywhiteback">Day white</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="scaleInput">Scale</label>
+          <input id="scaleInput" type="number" min="500" step="500" placeholder="auto" />
+        </div>
+        <div class="buttonRow">
+          <button id="zoomInButton">Zoom in</button>
+          <button id="zoomOutButton">Zoom out</button>
+        </div>
+        <button id="renderButton">Render active cell</button>
+        <button id="reloadButton">Reload selected files</button>
+        <button id="clearButton">Clear imported cells</button>
         <button id="sampleButton">Render built-in S-52 sample</button>
       </div>
+      <h3>Cell summary</h3>
+      <pre id="cellSummary">No cell selected.</pre>
       <h3>Selected / imported files</h3>
       <pre id="fileList">No files selected.</pre>
       <h3>Status / diagnostics</h3>
-      <pre id="status">Phase 12/13/14 demo shell ready.</pre>
+      <pre id="status">Phase 22 viewer shell ready.</pre>
       <h3>Pointer / gesture events</h3>
       <pre id="events" class="events">No interaction yet.</pre>
     </section>
