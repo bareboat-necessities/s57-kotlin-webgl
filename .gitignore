@@ -6,3 +6,7 @@ build/
 .DS_Store
 node_modules/
 kotlin-js-store/
+
+# S-52 web atlases are external resources resolved from the s52-kotlin-webgl checkout.
+# Do not vendor generated or copied atlas files in this repository.
+demo/src/jsMain/resources/s52/opencpn/
