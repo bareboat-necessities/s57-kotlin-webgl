@@ -14,9 +14,13 @@ import io.github.s57.render.DepthMeshConfig
 import io.github.s57.render.Phase16Counters
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
+import io.github.s57.render.boundedScale
 import io.github.s57.render.chartRenderRequestForCell
+import io.github.s57.render.chooseInitialActiveCell
+import io.github.s57.render.normalizePaletteName
 import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
+import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
@@ -78,14 +82,12 @@ fun main() {
             cellSelect.appendChild(option)
             activeCellId = null
         } else {
-            if (activeCellId == null || allCells.none { it.cellId == activeCellId }) {
-                activeCellId = allCells.firstOrNull { it.bounds != null }?.cellId ?: allCells.first().cellId
-            }
-            allCells.forEach { cell ->
+            activeCellId = chooseInitialActiveCell(allCells, activeCellId)
+            viewerCellOptions(allCells).forEach { cell ->
                 val option = document.createElement("option")
                 option.setAttribute("value", cell.cellId)
                 if (cell.cellId == activeCellId) option.setAttribute("selected", "selected")
-                option.textContent = cell.cellId + " — features=" + cell.featureCount + if (cell.bounds == null) " — no bounds" else ""
+                option.textContent = cell.label
                 cellSelect.appendChild(option)
             }
         }
@@ -114,7 +116,7 @@ fun main() {
                         appendLine("decodedFeatures=" + source.featureCount + " geometryDiagnostics=" + source.geometryDiagnosticCount)
                     }
                 }
-                appendLine("palette=" + paletteSelect.value)
+                appendLine("palette=" + normalizePaletteName(paletteSelect.value))
                 appendLine("scale=" + (activeScaleOverride?.roundToInt()?.toString() ?: "auto"))
             }
         }
@@ -143,13 +145,15 @@ fun main() {
             return
         }
         val autoRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
-        val scale = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoRequest.scaleDenominator
+        val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoRequest.scaleDenominator)
         activeScaleOverride = scale
         scaleInput.value = scale.roundToInt().toString()
+        val palette = normalizePaletteName(paletteSelect.value)
+        paletteSelect.value = palette
         val request = autoRequest.copy(
             scaleDenominator = scale,
             camera = autoRequest.camera.copy(zoom = scale),
-            paletteName = paletteSelect.value,
+            paletteName = palette,
             centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
             depthMesh = DepthMeshConfig(enabled = false),
             renderMode = ChartRenderMode.Flat2D
@@ -220,6 +224,8 @@ fun main() {
         activeCellId = null
         activeScaleOverride = null
         scaleInput.value = ""
+        selectedFiles = emptyList()
+        selectedLabels = emptyList()
         updateFileList()
         updateCellSummary()
         status?.textContent = "Cleared imported cells."
@@ -242,7 +248,7 @@ fun main() {
         }
         fun next(index: Int) {
             if (index >= files.size) {
-                activeCellId = cells().firstOrNull { it.bounds != null }?.cellId ?: cells().firstOrNull()?.cellId
+                activeCellId = chooseInitialActiveCell(cells(), activeCellId)
                 updateCellSummary()
                 status?.textContent = importSummary()
                 return
@@ -288,13 +294,15 @@ fun main() {
     }
 
     paletteSelect.onchange = {
+        paletteSelect.value = normalizePaletteName(paletteSelect.value)
         updateCellSummary()
         renderActive("palette change")
         null
     }
 
     scaleInput.onchange = {
-        activeScaleOverride = scaleInput.value.toDoubleOrNull()
+        activeScaleOverride = scaleInput.value.toDoubleOrNull()?.let(::boundedScale)
+        activeScaleOverride?.let { scaleInput.value = it.roundToInt().toString() }
         updateCellSummary()
         renderActive("scale change")
         null
@@ -302,7 +310,7 @@ fun main() {
 
     zoomInButton.onclick = {
         val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
-        activeScaleOverride = (base / 1.6).coerceAtLeast(500.0)
+        activeScaleOverride = boundedScale(base / 1.6)
         scaleInput.value = activeScaleOverride!!.roundToInt().toString()
         renderActive("zoom in")
         null
@@ -310,7 +318,7 @@ fun main() {
 
     zoomOutButton.onclick = {
         val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
-        activeScaleOverride = (base * 1.6).coerceAtMost(50_000_000.0)
+        activeScaleOverride = boundedScale(base * 1.6)
         scaleInput.value = activeScaleOverride!!.roundToInt().toString()
         renderActive("zoom out")
         null
