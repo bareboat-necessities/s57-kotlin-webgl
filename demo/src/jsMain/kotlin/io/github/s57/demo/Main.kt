@@ -26,7 +26,6 @@ import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
-import org.w3c.dom.asList
 import org.w3c.files.File
 import kotlin.math.roundToInt
 
@@ -273,7 +272,12 @@ fun main() {
 
     fun selectedInputFiles(): List<File> {
         val files = fileInput.files ?: return emptyList()
-        return files.asList().mapNotNull { it as? File }
+        val out = mutableListOf<File>()
+        for (index in 0 until files.length) {
+            val file = files.item(index) ?: continue
+            out += file
+        }
+        return out
     }
 
     fun selectedInputLabels(files: List<File>): List<String> = files.map { it.name + " — " + it.size.toLong() + " bytes" }
