@@ -413,3 +413,28 @@ tasks.register("phase11Check") {
     description = "Runs Phase 11 real S-52 integration checks and all previous phase checks."
     dependsOn("phase10Check", "phase11Audit", ":s57-s52-adapter:build", ":s57-render-webgl:build", ":demo:build")
 }
+
+tasks.register("phase16BAudit") {
+    group = "verification"
+    description = "Checks Phase 16B structured S-52 render summary helper."
+
+    doLast {
+        val helper = layout.projectDirectory.file("s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52StructuredRender.kt").asFile.readText()
+        check("renderS52FrameWithSummary" in helper) { "Phase 16B helper must expose renderS52FrameWithSummary." }
+        check("S52RenderSummary" in helper) { "Phase 16B helper must populate S52RenderSummary." }
+        check("toSummary" in helper) { "Phase 16B helper must use BrowserS52PortrayalResult.toSummary." }
+        check("failureStage" in helper) { "Phase 16B helper must report structured failure stages." }
+
+        val demo = layout.projectDirectory.file("demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt").asFile.readText()
+        check("Phase16Counters" in demo) { "Demo must print Phase 16 diagnostic counters." }
+
+        val docs = layout.projectDirectory.file("docs/PHASE16B_STRUCTURED_S52.md").asFile.readText()
+        check("renderS52FrameWithSummary" in docs) { "Phase 16B docs must mention the structured helper." }
+    }
+}
+
+tasks.register("phase16BCheck") {
+    group = "verification"
+    description = "Runs Phase 16B structured S-52 render-summary checks."
+    dependsOn("phase11Check", "phase16BAudit", ":s57-render-webgl:build", ":demo:build")
+}
