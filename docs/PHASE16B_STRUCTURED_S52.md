@@ -1,8 +1,8 @@
-# Phase 16B — structured S-52 render counters
+# Phase 16B/16C — structured S-52 render counters
 
-Phase 16B adds a focused structured S-52 render helper without rewriting the large existing WebGL renderer file.
+Phase 16B adds a focused structured S-52 render helper without rewriting the large existing WebGL renderer file. Phase 16C wires the browser demo to that helper.
 
-The new helper is:
+The helper is:
 
 ```text
 s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52StructuredRender.kt
@@ -48,22 +48,22 @@ webgl-render
 none
 ```
 
-## Why this is a separate helper
+## Demo wiring
 
-The original `BrowserS57WebGlRenderer.kt` is large and includes the WebGL shader body. The GitHub connector blocked full-file replacement attempts for that file. This phase avoids that risk by adding a small JS helper beside it.
-
-## Follow-up mechanical change
-
-The browser demo should call:
+The browser demo now calls:
 
 ```text
 renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
 ```
 
-instead of:
+This means the existing Phase 16 diagnostics block receives structured S-52 counters from `summary.s52` instead of relying only on the human-readable S-52 render message.
+
+The built-in sample dataset was moved out of `Main.kt` to keep the browser entry point small:
 
 ```text
-renderer.renderS52Frame("chartCanvas", result.frame)
+demo/src/jsMain/kotlin/io/github/s57/demo/DemoSampleDataset.kt
 ```
 
-That is a one-line demo wiring change. The helper itself is now committed and can be used by the demo or any browser caller.
+## Why this is a separate helper
+
+The original `BrowserS57WebGlRenderer.kt` is large and includes the WebGL shader body. The GitHub connector blocked full-file replacement attempts for that file. This phase avoids that risk by adding a small JS helper beside it and wiring the demo to use the helper.
