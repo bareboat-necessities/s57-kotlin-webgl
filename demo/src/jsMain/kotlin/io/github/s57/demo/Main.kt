@@ -1,5 +1,6 @@
 package io.github.s57.demo
 
+import io.github.s57.core.GeoBounds
 import io.github.s57.core.S57CellSummary
 import io.github.s57.render.BrowserChartInput
 import io.github.s57.render.BrowserS57FileImporter
@@ -20,12 +21,23 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.asList
 import org.w3c.files.File
+import kotlin.math.roundToInt
 
 fun main() {
     val fileInput = document.getElementById("fileInput") as HTMLInputElement
     val renderButton = document.getElementById("renderButton") as HTMLButtonElement
+    val reloadButton = document.getElementById("reloadButton") as HTMLButtonElement
+    val clearButton = document.getElementById("clearButton") as HTMLButtonElement
+    val zoomInButton = document.getElementById("zoomInButton") as HTMLButtonElement
+    val zoomOutButton = document.getElementById("zoomOutButton") as HTMLButtonElement
     val sampleButton = document.getElementById("sampleButton") as HTMLButtonElement
+    val cellSelect = document.getElementById("cellSelect") as HTMLSelectElement
+    val paletteSelect = document.getElementById("paletteSelect") as HTMLSelectElement
+    val scaleInput = document.getElementById("scaleInput") as HTMLInputElement
+    val cellSummary = document.getElementById("cellSummary")
     val fileList = document.getElementById("fileList")
     val status = document.getElementById("status")
     val events = document.getElementById("events")
@@ -42,20 +54,75 @@ fun main() {
     val renderer = BrowserS57WebGlRenderer()
     var imports = emptyList<S57EngineImportResult>()
     var failures = emptyList<String>()
-    var activeCell: S57CellSummary? = null
+    var activeCellId: String? = null
+    var selectedFiles = emptyList<File>()
+    var selectedLabels = emptyList<String>()
+    var activeScaleOverride: Double? = null
 
-    fun updateFileList(lines: List<String>) {
+    fun cells(): List<S57CellSummary> = engine.listCells()
+    fun activeCell(): S57CellSummary? = activeCellId?.let { id -> cells().firstOrNull { it.cellId == id } }
+        ?: cells().firstOrNull { it.bounds != null }
+        ?: cells().firstOrNull()
+
+    fun formatBounds(bounds: GeoBounds?): String = bounds?.let {
+        "W=${it.minLon}, S=${it.minLat}, E=${it.maxLon}, N=${it.maxLat}"
+    } ?: "none"
+
+    fun updateCellSelector() {
+        val allCells = cells()
+        cellSelect.innerHTML = ""
+        if (allCells.isEmpty()) {
+            val option = document.createElement("option")
+            option.setAttribute("value", "")
+            option.textContent = "No imported cells"
+            cellSelect.appendChild(option)
+            activeCellId = null
+        } else {
+            if (activeCellId == null || allCells.none { it.cellId == activeCellId }) {
+                activeCellId = allCells.firstOrNull { it.bounds != null }?.cellId ?: allCells.first().cellId
+            }
+            allCells.forEach { cell ->
+                val option = document.createElement("option")
+                option.setAttribute("value", cell.cellId)
+                if (cell.cellId == activeCellId) option.setAttribute("selected", "selected")
+                option.textContent = cell.cellId + " — features=" + cell.featureCount + if (cell.bounds == null) " — no bounds" else ""
+                cellSelect.appendChild(option)
+            }
+        }
+    }
+
+    fun updateFileList(lines: List<String> = selectedLabels) {
         fileList?.textContent = if (lines.isEmpty()) "No files selected." else lines.joinToString("\n")
     }
 
-    fun selectActiveCell() {
-        val cells = engine.listCells()
-        activeCell = cells.firstOrNull { it.bounds != null } ?: cells.firstOrNull()
+    fun updateCellSummary() {
+        updateCellSelector()
+        val cell = activeCell()
+        val matchingImport = cell?.let { active -> imports.lastOrNull { it.cell.cellId == active.cellId } }
+        cellSummary?.textContent = if (cell == null) {
+            "No cell selected."
+        } else {
+            buildString {
+                appendLine("cellId=" + cell.cellId)
+                appendLine("name=" + cell.name)
+                appendLine("features=" + cell.featureCount)
+                appendLine("bounds=" + formatBounds(cell.bounds))
+                matchingImport?.let { import ->
+                    appendLine("indexed=" + import.indexReport.indexedFeatureCount)
+                    import.sourceImport?.let { source ->
+                        appendLine("rawFeatures=" + source.raw.features.size + " rawVectors=" + source.raw.vectors.size)
+                        appendLine("decodedFeatures=" + source.featureCount + " geometryDiagnostics=" + source.geometryDiagnosticCount)
+                    }
+                }
+                appendLine("palette=" + paletteSelect.value)
+                appendLine("scale=" + (activeScaleOverride?.roundToInt()?.toString() ?: "auto"))
+            }
+        }
     }
 
     fun importSummary(): String = buildString {
-        appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size)
-        val cell = activeCell
+        appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size + " cells=" + cells().size)
+        val cell = activeCell()
         appendLine(if (cell == null) "activeCell=none" else "activeCell=" + cell.cellId + " bounds=" + (cell.bounds ?: "none") + " features=" + cell.featureCount)
         imports.forEachIndexed { index, result ->
             appendLine("[" + (index + 1) + "] " + result.toPlainText())
@@ -72,9 +139,17 @@ fun main() {
     fun renderCell(cell: S57CellSummary, label: String) {
         if (cell.bounds == null) {
             status?.textContent = "Cannot render " + label + ": cell has no bounds.\n" + importSummary()
+            updateCellSummary()
             return
         }
-        val request = chartRenderRequestForCell(cell, canvas.width, canvas.height).copy(
+        val autoRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
+        val scale = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoRequest.scaleDenominator
+        activeScaleOverride = scale
+        scaleInput.value = scale.roundToInt().toString()
+        val request = autoRequest.copy(
+            scaleDenominator = scale,
+            camera = autoRequest.camera.copy(zoom = scale),
+            paletteName = paletteSelect.value,
             centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
             depthMesh = DepthMeshConfig(enabled = false),
             renderMode = ChartRenderMode.Flat2D
@@ -103,7 +178,7 @@ fun main() {
         )
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
-            appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator)
+            appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator + " palette=" + request.paletteName)
             appendLine("Phase16 diagnostics:")
             appendLine(counters.toPlainText())
             appendLine("S-52 message: " + summary.message)
@@ -114,30 +189,61 @@ fun main() {
             }
             if (failures.isNotEmpty()) appendLine("importFailures=" + failures.size)
         }
+        updateCellSummary()
+    }
+
+    fun renderActive(label: String = "active cell") {
+        activeCell()?.let { renderCell(it, label) } ?: run {
+            status?.textContent = "No imported ENC cell is available. Select a .000 file first or use the sample button."
+            updateCellSummary()
+        }
     }
 
     fun loadSample() {
         engine.clear()
         failures = emptyList()
         imports = listOf(engine.importDataset(sampleDataset()))
-        selectActiveCell()
-        updateFileList(listOf("Built-in S-52 sanity sample"))
-        activeCell?.let { renderCell(it, "sample") } ?: run { status?.textContent = "Sample import failed: no cell available." }
+        activeCellId = imports.firstOrNull()?.cell?.cellId
+        selectedFiles = emptyList()
+        selectedLabels = listOf("Built-in S-52 sanity sample")
+        activeScaleOverride = null
+        scaleInput.value = ""
+        updateFileList()
+        updateCellSummary()
+        renderActive("sample")
+    }
+
+    fun clearAll() {
+        engine.clear()
+        imports = emptyList()
+        failures = emptyList()
+        activeCellId = null
+        activeScaleOverride = null
+        scaleInput.value = ""
+        updateFileList()
+        updateCellSummary()
+        status?.textContent = "Cleared imported cells."
     }
 
     fun importFiles(files: List<File>, labels: List<String>) {
         engine.clear()
         imports = emptyList()
         failures = emptyList()
-        activeCell = null
-        updateFileList(labels)
+        activeCellId = null
+        activeScaleOverride = null
+        scaleInput.value = ""
+        selectedFiles = files
+        selectedLabels = labels
+        updateFileList()
+        updateCellSummary()
         if (files.isEmpty()) {
             status?.textContent = "No files selected."
             return
         }
         fun next(index: Int) {
             if (index >= files.size) {
-                selectActiveCell()
+                activeCellId = cells().firstOrNull { it.bounds != null }?.cellId ?: cells().firstOrNull()?.cellId
+                updateCellSummary()
                 status?.textContent = importSummary()
                 return
             }
@@ -151,33 +257,81 @@ fun main() {
                 } else {
                     imports = imports + ok
                 }
-                updateFileList(labels + ("Imported=" + imports.size + " failed=" + failures.size))
+                updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size))
+                updateCellSummary()
                 next(index + 1)
             }
         }
         next(0)
     }
 
+    fun selectedInputFiles(): List<File> {
+        val files = fileInput.files ?: return emptyList()
+        return files.asList().mapNotNull { it as? File }
+    }
+
+    fun selectedInputLabels(files: List<File>): List<String> = files.map { it.name + " — " + it.size.toLong() + " bytes" }
+
     fileInput.onchange = {
-        val files = fileInput.files
-        if (files == null || files.length == 0) {
-            updateFileList(emptyList())
-            status?.textContent = "No files selected."
-        } else {
-            val selectedFiles = mutableListOf<File>()
-            val labels = mutableListOf<String>()
-            for (index in 0 until files.length) {
-                val file = files.item(index) ?: continue
-                selectedFiles += file
-                labels += file.name + " — " + file.size.toLong() + " bytes"
-            }
-            importFiles(selectedFiles, labels)
-        }
+        val files = selectedInputFiles()
+        importFiles(files, selectedInputLabels(files))
+        null
+    }
+
+    cellSelect.onchange = {
+        activeCellId = cellSelect.value.takeIf { it.isNotBlank() }
+        activeScaleOverride = null
+        scaleInput.value = ""
+        updateCellSummary()
+        renderActive("selected cell")
+        null
+    }
+
+    paletteSelect.onchange = {
+        updateCellSummary()
+        renderActive("palette change")
+        null
+    }
+
+    scaleInput.onchange = {
+        activeScaleOverride = scaleInput.value.toDoubleOrNull()
+        updateCellSummary()
+        renderActive("scale change")
+        null
+    }
+
+    zoomInButton.onclick = {
+        val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
+        activeScaleOverride = (base / 1.6).coerceAtLeast(500.0)
+        scaleInput.value = activeScaleOverride!!.roundToInt().toString()
+        renderActive("zoom in")
+        null
+    }
+
+    zoomOutButton.onclick = {
+        val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
+        activeScaleOverride = (base * 1.6).coerceAtMost(50_000_000.0)
+        scaleInput.value = activeScaleOverride!!.roundToInt().toString()
+        renderActive("zoom out")
         null
     }
 
     renderButton.onclick = {
-        activeCell?.let { renderCell(it, "selected ENC") } ?: run { status?.textContent = "No imported ENC cell is available. Select a .000 file first or use the sample button." }
+        renderActive("active cell")
+        null
+    }
+
+    reloadButton.onclick = {
+        if (selectedFiles.isEmpty()) {
+            status?.textContent = "No selected browser files to reload. Choose .000 files again."
+        } else {
+            importFiles(selectedFiles, selectedLabels)
+        }
+        null
+    }
+
+    clearButton.onclick = {
+        clearAll()
         null
     }
 
@@ -186,5 +340,6 @@ fun main() {
         null
     }
 
-    status?.textContent = "Phase 20 demo ready. Select an ENC .000 file to import; first render auto-fits the imported cell bounds."
+    updateCellSummary()
+    status?.textContent = "Phase 22 viewer ready. Import ENC files, select a cell, choose palette, and adjust scale/zoom."
 }
