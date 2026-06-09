@@ -77,6 +77,7 @@ data class S57RawVectorRecord(
     val updateInstruction: S57UpdateInstruction,
     val twoDimensionalCoordinates: List<S57RawCoordinate> = emptyList(),
     val threeDimensionalCoordinates: List<S57RawCoordinate> = emptyList(),
+    val vectorReferences: List<S57VectorReference> = emptyList(),
     val rawFieldTags: Set<String> = emptySet()
 ) {
     val twoDimensionalCoordinateCount: Int get() = twoDimensionalCoordinates.size
@@ -125,6 +126,14 @@ data class S57SpatialReference(
     val name: S57RecordName,
     val orientation: Int,
     val usage: Int,
+    val mask: Int
+)
+
+data class S57VectorReference(
+    val name: S57RecordName,
+    val orientation: Int,
+    val usage: Int,
+    val topologyIndicator: Int,
     val mask: Int
 )
 
