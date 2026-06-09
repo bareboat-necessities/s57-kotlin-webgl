@@ -95,6 +95,7 @@ class S57RawDecoder(
         val ruin = S57UpdateInstruction.fromCode(vrid.u8(7))
         val sg2d = record.fields("SG2D").flatMap(::decodeSg2dCoordinates)
         val sg3d = record.fields("SG3D").flatMap(::decodeSg3dCoordinates)
+        val vrpt = record.fields("VRPT").flatMap(::decodeVectorReferences)
         return S57RawVectorRecord(
             id = rcid,
             recordName = S57RecordName(rcnm, rcid),
@@ -102,10 +103,10 @@ class S57RawDecoder(
             updateInstruction = ruin,
             twoDimensionalCoordinates = sg2d,
             threeDimensionalCoordinates = sg3d,
+            vectorReferences = vrpt,
             rawFieldTags = record.fields.map { it.tag }.toSet()
         )
     }
-
 
     private fun decodeSg2dCoordinates(field: Iso8211Field): List<S57RawCoordinate> {
         val fromText = decodeTextCoordinates(field.text())
@@ -210,6 +211,41 @@ class S57RawDecoder(
             val mask = data.u8(cursor + 7)
             result += S57SpatialReference(S57RecordName(rcnm, rcid), ornt, usag, mask)
             cursor += 8
+        }
+        return result
+    }
+
+    private fun decodeVectorReferences(field: Iso8211Field): List<S57VectorReference> {
+        val text = field.text()
+        if ('=' in text) {
+            return text.replace('\u001e', ';').replace('\u001f', ';')
+                .split('|', '\n')
+                .map { keyValuePairs(it) }
+                .filter { it.isNotEmpty() }
+                .map { pairs ->
+                    val rcnm = pairs["RCNM"]?.toIntOrNull() ?: 0
+                    val rcid = pairs["RCID"]?.toLongOrNull() ?: pairs["ID"]?.toLongOrNull() ?: 0L
+                    S57VectorReference(
+                        name = S57RecordName(rcnm, rcid),
+                        orientation = pairs["ORNT"]?.toIntOrNull() ?: 1,
+                        usage = pairs["USAG"]?.toIntOrNull() ?: 1,
+                        topologyIndicator = pairs["TOPI"]?.toIntOrNull() ?: 0,
+                        mask = pairs["MASK"]?.toIntOrNull() ?: 255
+                    )
+                }
+        }
+        val data = field.content
+        val result = mutableListOf<S57VectorReference>()
+        var cursor = 0
+        while (cursor + 9 <= data.size) {
+            val rcnm = data.u8(cursor)
+            val rcid = data.u32(cursor + 1)
+            val ornt = data.u8(cursor + 5)
+            val usag = data.u8(cursor + 6)
+            val topi = data.u8(cursor + 7)
+            val mask = data.u8(cursor + 8)
+            result += S57VectorReference(S57RecordName(rcnm, rcid), ornt, usag, topi, mask)
+            cursor += 9
         }
         return result
     }
