@@ -47,10 +47,11 @@ class S57ToS52Adapter {
             diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.UnsupportedObjectClass, S57ToS52DiagnosticSeverity.Warning, "Unsupported object class $normalizedClass")
             return emptyList()
         }
+        val sourceGeometry = geometry
         return when {
-            normalizedClass == "SOUNDG" && geometry is S57Geometry.MultiPoint -> splitSoundings(geometry.points, diagnostics)
-            geometry is S57Geometry.MultiPolygon -> splitMultiPolygon(geometry.polygons, diagnostics)
-            else -> listOfNotNull(toPortrayalFeature(id, geometry, attributes, diagnostics))
+            normalizedClass == "SOUNDG" && sourceGeometry is S57Geometry.MultiPoint -> splitSoundings(sourceGeometry.points, diagnostics)
+            sourceGeometry is S57Geometry.MultiPolygon -> splitMultiPolygon(sourceGeometry.polygons, diagnostics)
+            else -> listOfNotNull(toPortrayalFeature(id, sourceGeometry, attributes, diagnostics))
         }
     }
 
