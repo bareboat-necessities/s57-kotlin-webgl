@@ -26,14 +26,7 @@ data class ProjectedFeature(
     val geoBounds: GeoBounds?,
     val screenBounds: ScreenBounds?,
     val feature: S57Feature? = null
-) {
-    val isOnscreen: Boolean get() = screenBounds?.intersects(ScreenBounds(0.0, 0.0, screenBoundsViewportWidth, screenBoundsViewportHeight)) ?: false
-
-    companion object {
-        internal var screenBoundsViewportWidth: Double = 0.0
-        internal var screenBoundsViewportHeight: Double = 0.0
-    }
-}
+)
 
 data class ScreenBounds(
     val minX: Double,
@@ -78,8 +71,8 @@ data class StaticChartFrame(
     val featureCount: Int get() = projectedFeatures.size
     val onscreenFeatureCount: Int get() = projectedFeatures.count { it.screenBounds?.intersects(viewportBounds()) == true }
     val offscreenFeatureCount: Int get() = projectedFeatures.count { it.screenBounds != null && it.screenBounds.intersects(viewportBounds()).not() }
-    val clippedFeatureCount: Int get() = projectedFeatures.count { bounds ->
-        val screen = bounds.screenBounds
+    val clippedFeatureCount: Int get() = projectedFeatures.count { feature ->
+        val screen = feature.screenBounds
         screen != null && screen.intersects(viewportBounds()) && !screen.isInside(request.widthPx, request.heightPx)
     }
 
