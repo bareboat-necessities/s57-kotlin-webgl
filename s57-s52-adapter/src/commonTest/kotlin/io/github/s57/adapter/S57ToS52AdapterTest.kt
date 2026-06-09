@@ -46,7 +46,7 @@ class S57ToS52AdapterTest {
         assertEquals(S57PortrayalPrimitive.Area, enc.primitive)
         assertTrue(enc.geometry is S57PortrayalGeometry.Polygon)
         assertEquals(22000, enc.scaleMin)
-        assertEquals(S57PortrayalValue.Text("3.5"), enc.attributes["DRVAL1"])
+        assertEquals(S57PortrayalValue.Decimal(3.5), enc.attributes["DRVAL1"])
         assertEquals(S57PortrayalValue.Decimal(8.0), enc.attributes["DRVAL2"])
         assertEquals(S57PortrayalValue.Text("Test depth area"), enc.attributes["OBJNAM"])
     }
@@ -56,15 +56,19 @@ class S57ToS52AdapterTest {
         val feature = S57Feature(
             id = 129,
             objectClass = "SOUNDG",
-            attributes = mapOf("VALSOU" to S57Value.Text("4.2")),
+            attributes = mapOf("VALSOU" to S57Value.Text("4.2;5.1")),
             geometry = S57Geometry.MultiPoint(listOf(GeoPoint(-74.1, 40.2), GeoPoint(-74.0, 40.25)))
         )
 
-        val enc = S57ToS52Adapter().adaptFeature(feature).features.single()
-        assertEquals("SOUNDG", enc.objectClassAcronym)
-        assertEquals(S57PortrayalPrimitive.Point, enc.primitive)
-        assertTrue(enc.geometry is S57PortrayalGeometry.MultiPoint)
-        assertEquals(S57PortrayalValue.Text("4.2"), enc.attributes["VALSOU"])
+        val result = S57ToS52Adapter().adaptFeature(feature)
+        assertEquals(2, result.features.size)
+        assertEquals(listOf(129001L, 129002L), result.features.map { it.id })
+        assertTrue(result.features.all { it.sourceFeatureId == 129L })
+        assertTrue(result.features.all { it.objectClassAcronym == "SOUNDG" })
+        assertTrue(result.features.all { it.primitive == S57PortrayalPrimitive.Point })
+        assertTrue(result.features.all { it.geometry is S57PortrayalGeometry.Point })
+        assertEquals(S57PortrayalValue.Decimal(4.2), result.features[0].attributes["VALSOU"])
+        assertEquals(S57PortrayalValue.Decimal(5.1), result.features[1].attributes["VALSOU"])
     }
 
     @Test
