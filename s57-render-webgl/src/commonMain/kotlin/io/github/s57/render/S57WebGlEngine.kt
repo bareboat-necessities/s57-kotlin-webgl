@@ -87,21 +87,25 @@ fun chartRenderRequestForCell(
     cell: S57CellSummary,
     widthPx: Int = 1024,
     heightPx: Int = 768,
-    scaleDenominator: Double = 22_000.0,
-    center: GeoPoint? = null
+    scaleDenominator: Double? = null,
+    center: GeoPoint? = null,
+    paddingFraction: Double = 0.08
 ): ChartRenderRequest {
-    val bounds = requireNotNull(cell.bounds) { "Cell ${cell.cellId} has no bounds" }
-    val cameraCenter = center ?: GeoPoint((bounds.minLon + bounds.maxLon) / 2.0, (bounds.minLat + bounds.maxLat) / 2.0)
+    val sourceBounds = requireNotNull(cell.bounds) { "Cell ${cell.cellId} has no bounds" }
+    val viewport = ScreenSize(widthPx, heightPx)
+    val fit = chartViewportFitForBounds(sourceBounds, viewport, paddingFraction)
+    val cameraCenter = center ?: fit.cameraCenter
+    val scale = scaleDenominator ?: fit.scaleDenominator
     return ChartRenderRequest(
         cellId = cell.cellId,
-        bounds = bounds,
+        bounds = fit.fittedBounds,
         widthPx = widthPx,
         heightPx = heightPx,
-        scaleDenominator = scaleDenominator,
+        scaleDenominator = scale,
         camera = ChartCameraState(
             center = cameraCenter,
-            zoom = scaleDenominator,
-            viewport = ScreenSize(widthPx, heightPx)
+            zoom = scale,
+            viewport = viewport
         )
     )
 }
