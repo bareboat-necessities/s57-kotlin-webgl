@@ -6,6 +6,7 @@ import io.github.s57.core.S57CellSummary
 import io.github.s57.core.S57Dataset
 import io.github.s57.core.S57Feature
 import io.github.s57.core.S57Geometry
+import io.github.s57.core.S57Value
 import io.github.s57.core.raw.S57Primitive
 import io.github.s57.core.raw.S57RawCoordinate
 import io.github.s57.core.raw.S57RawDataset
@@ -14,13 +15,11 @@ import io.github.s57.core.raw.S57RawVectorRecord
 import io.github.s57.core.raw.S57SpatialReference
 
 /**
- * Phase 4 geometry reconstruction from S-57 raw feature/vector records.
+ * Phase 17 geometry reconstruction from S-57 raw feature/vector records.
  *
- * This class deliberately stays small and deterministic: it resolves FSPT
- * feature-to-spatial references, applies simple orientation handling, scales
- * SG2D/SG3D raw coordinates using COMF/SOMF, and returns immutable geometry
- * objects.  It does not perform chart quilting, live viewport management, or
- * any WebGL rendering.
+ * This resolves FSPT feature references, applies COMF/SOMF scaling, honors edge
+ * orientation, expands VRPT connected-node endpoints, and stitches multi-edge
+ * area rings where possible.
  */
 class S57GeometryBuilder(
     private val defaultCoordinateMultiplier: Int = DEFAULT_COMF,
@@ -36,12 +35,13 @@ class S57GeometryBuilder(
         val diagnostics = mutableListOf<S57GeometryDiagnostic>()
         val features = raw.features.map { feature ->
             val geometry = buildFeatureGeometry(feature, context, diagnostics)
+            val attrs = (feature.attributes + feature.nationalAttributes).associate { attr ->
+                attr.acronym to S57Value.Text(attr.value)
+            } + feature.soundingAttribute(context)
             S57Feature(
                 id = feature.id,
                 objectClass = feature.objectClassAcronym,
-                attributes = (feature.attributes + feature.nationalAttributes).associate { attr ->
-                    attr.acronym to io.github.s57.core.S57Value.Text(attr.value)
-                },
+                attributes = attrs,
                 geometry = geometry
             )
         }
@@ -83,7 +83,7 @@ class S57GeometryBuilder(
         return when (feature.primitive) {
             S57Primitive.Point -> pointGeometry(referenced, context)
             S57Primitive.Line -> lineGeometry(referenced, context)
-            S57Primitive.Area -> areaGeometry(referenced, context)
+            S57Primitive.Area -> areaGeometry(feature.id, referenced, context, diagnostics)
             S57Primitive.Unknown,
             S57Primitive.None -> lineOrPointFallback(referenced, context)
         }
@@ -99,17 +99,29 @@ class S57GeometryBuilder(
     }
 
     private fun lineGeometry(referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>, context: BuildContext): S57Geometry {
-        val points = concatenateSegments(referenced, context, closeRing = false)
+        val points = stitchSegments(referenced.map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }, closeRing = false).flattenJoined()
         return if (points.size >= 2) S57Geometry.LineString(points) else pointGeometry(referenced, context)
     }
 
-    private fun areaGeometry(referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>, context: BuildContext): S57Geometry {
-        val ring = concatenateSegments(referenced, context, closeRing = true)
-        return if (ring.size >= 4) S57Geometry.Polygon(listOf(ring)) else lineGeometry(referenced, context)
+    private fun areaGeometry(
+        featureId: Long,
+        referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>,
+        context: BuildContext,
+        diagnostics: MutableList<S57GeometryDiagnostic>
+    ): S57Geometry {
+        val segments = referenced.map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }
+        val rings = stitchSegments(segments, closeRing = true).filter { it.size >= 4 && it.first() == it.last() }
+        if (rings.isEmpty()) {
+            diagnostics += S57GeometryDiagnostic(featureId, S57GeometryDiagnosticSeverity.Warning, "Could not assemble closed area ring")
+            return lineGeometry(referenced, context)
+        }
+        val openCount = segments.size - rings.size
+        if (openCount > 0) diagnostics += S57GeometryDiagnostic(featureId, S57GeometryDiagnosticSeverity.Info, "Assembled ${rings.size} ring(s) from ${segments.size} edge segment(s)")
+        return S57Geometry.Polygon(rings)
     }
 
     private fun lineOrPointFallback(referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>, context: BuildContext): S57Geometry {
-        val points = concatenateSegments(referenced, context, closeRing = false)
+        val points = stitchSegments(referenced.map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }, closeRing = false).flattenJoined()
         return when {
             points.size >= 2 -> S57Geometry.LineString(points)
             points.size == 1 -> S57Geometry.Point(points.single())
@@ -117,19 +129,59 @@ class S57GeometryBuilder(
         }
     }
 
-    private fun concatenateSegments(
-        referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>,
-        context: BuildContext,
-        closeRing: Boolean
-    ): List<GeoPoint> {
-        val out = mutableListOf<GeoPoint>()
-        for ((ref, vector) in referenced) {
-            val segment = vector.coordinates.map { it.toGeoPoint(context) }.oriented(ref.orientation)
-            for (point in segment) {
-                if (out.lastOrNull() != point) out += point
-            }
+    private fun S57RawVectorRecord.segmentPoints(context: BuildContext): List<GeoPoint> {
+        val own = coordinates.map { it.toGeoPoint(context) }
+        if (vectorReferences.isEmpty()) return own
+        val nodePoints = vectorReferences.mapNotNull { ref -> context.vectorByName[ref.name]?.coordinates?.firstOrNull()?.toGeoPoint(context) }
+        if (nodePoints.isEmpty()) return own
+        val first = nodePoints.first()
+        val last = nodePoints.last()
+        return buildList {
+            add(first)
+            own.forEach { point -> if (lastOrNull() != point) add(point) }
+            if (lastOrNull() != last) add(last)
         }
-        if (closeRing && out.size >= 3 && out.first() != out.last()) out += out.first()
+    }
+
+    private fun stitchSegments(segments: List<List<GeoPoint>>, closeRing: Boolean): List<List<GeoPoint>> {
+        val remaining = segments.filter { it.isNotEmpty() }.map { it.toMutableList() }.toMutableList()
+        val chains = mutableListOf<List<GeoPoint>>()
+        while (remaining.isNotEmpty()) {
+            val chain = remaining.removeAt(0).toMutableList()
+            var changed = true
+            while (changed) {
+                changed = false
+                val i = remaining.indexOfFirst { it.first() == chain.last() || it.last() == chain.last() || it.last() == chain.first() || it.first() == chain.first() }
+                if (i >= 0) {
+                    val next = remaining.removeAt(i)
+                    when {
+                        next.first() == chain.last() -> chain.addWithoutDuplicate(next)
+                        next.last() == chain.last() -> chain.addWithoutDuplicate(next.asReversed())
+                        next.last() == chain.first() -> chain.prependWithoutDuplicate(next)
+                        next.first() == chain.first() -> chain.prependWithoutDuplicate(next.asReversed())
+                    }
+                    changed = true
+                }
+            }
+            if (closeRing && chain.size >= 3 && chain.first() != chain.last()) chain += chain.first()
+            chains += chain
+        }
+        return chains
+    }
+
+    private fun MutableList<GeoPoint>.addWithoutDuplicate(points: List<GeoPoint>) {
+        points.forEach { point -> if (lastOrNull() != point) add(point) }
+    }
+
+    private fun MutableList<GeoPoint>.prependWithoutDuplicate(points: List<GeoPoint>) {
+        val copy = points.toMutableList()
+        if (copy.lastOrNull() == firstOrNull()) copy.removeAt(copy.lastIndex)
+        addAll(0, copy)
+    }
+
+    private fun List<List<GeoPoint>>.flattenJoined(): List<GeoPoint> {
+        val out = mutableListOf<GeoPoint>()
+        for (chain in this) chain.forEach { point -> if (out.lastOrNull() != point) out += point }
         return out
     }
 
@@ -140,6 +192,18 @@ class S57GeometryBuilder(
         lon = xRaw.toDouble() / context.coordinateMultiplier.toDouble(),
         lat = yRaw.toDouble() / context.coordinateMultiplier.toDouble()
     )
+
+    private fun S57RawFeatureRecord.soundingAttribute(context: BuildContext): Map<String, S57Value> {
+        if (objectClassAcronym != "SOUNDG") return emptyMap()
+        val values = spatialReferences.flatMap { ref -> context.vectorByName[ref.name]?.coordinates.orEmpty() }
+            .mapNotNull { it.zRaw }
+            .map { raw -> S57Value.Decimal(raw.toDouble() / context.soundingMultiplier.toDouble()) }
+        return when (values.size) {
+            0 -> emptyMap()
+            1 -> mapOf("VALSOU" to values.single())
+            else -> mapOf("VALSOU" to S57Value.ListValue(values))
+        }
+    }
 
     private fun mergeBounds(bounds: List<GeoBounds>): GeoBounds? {
         if (bounds.isEmpty()) return null
