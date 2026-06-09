@@ -1,12 +1,6 @@
 package io.github.s57.demo
 
-import io.github.s57.core.GeoBounds
-import io.github.s57.core.GeoPoint
 import io.github.s57.core.S57CellSummary
-import io.github.s57.core.S57Dataset
-import io.github.s57.core.S57Feature
-import io.github.s57.core.S57Geometry
-import io.github.s57.core.S57Value
 import io.github.s57.render.BrowserChartInput
 import io.github.s57.render.BrowserS57FileImporter
 import io.github.s57.render.BrowserS57WebGlRenderer
@@ -20,6 +14,7 @@ import io.github.s57.render.Phase16Counters
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.chartRenderRequestForCell
+import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
 import kotlinx.browser.document
 import org.w3c.dom.HTMLButtonElement
@@ -61,11 +56,7 @@ fun main() {
     fun importSummary(): String = buildString {
         appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size)
         val cell = activeCell
-        if (cell == null) {
-            appendLine("activeCell=none")
-        } else {
-            appendLine("activeCell=" + cell.cellId + " bounds=" + (cell.bounds ?: "none") + " features=" + cell.featureCount)
-        }
+        appendLine(if (cell == null) "activeCell=none" else "activeCell=" + cell.cellId + " bounds=" + (cell.bounds ?: "none") + " features=" + cell.featureCount)
         imports.forEachIndexed { index, result ->
             appendLine("[" + (index + 1) + "] " + result.toPlainText())
             result.sourceImport?.let { source ->
@@ -83,25 +74,20 @@ fun main() {
             status?.textContent = "Cannot render " + label + ": cell has no bounds.\n" + importSummary()
             return
         }
-        val request = chartRenderRequestForCell(
-            cell = cell,
-            widthPx = canvas.width,
-            heightPx = canvas.height,
-            scaleDenominator = 40000.0
-        ).copy(
+        val request = chartRenderRequestForCell(cell, canvas.width, canvas.height, 40000.0).copy(
             centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
             depthMesh = DepthMeshConfig(enabled = false),
             renderMode = ChartRenderMode.Flat2D
         )
         val result = engine.render(request)
-        val summary = renderer.renderS52Frame("chartCanvas", result.frame)
+        val summary = renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
         val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
         val source = matchingImport?.sourceImport
         val counters = Phase16Counters(
             rawFeatures = source?.raw?.features?.size ?: 0,
             rawVectors = source?.raw?.vectors?.size ?: 0,
             decodedFeatures = source?.featureCount ?: matchingImport?.indexReport?.featureCount ?: cell.featureCount,
-            hasBounds = cell.bounds != null,
+            hasBounds = true,
             geometryDiagnostics = source?.geometryDiagnosticCount ?: 0,
             indexedFeatures = matchingImport?.indexReport?.indexedFeatureCount ?: 0,
             queriedFeatures = result.frame.queriedFeatureCount,
@@ -132,12 +118,7 @@ fun main() {
         imports = listOf(engine.importDataset(sampleDataset()))
         selectActiveCell()
         updateFileList(listOf("Built-in S-52 sanity sample"))
-        val cell = activeCell
-        if (cell == null) {
-            status?.textContent = "Sample import failed: no cell available."
-        } else {
-            renderCell(cell, "sample")
-        }
+        activeCell?.let { renderCell(it, "sample") } ?: run { status?.textContent = "Sample import failed: no cell available." }
     }
 
     fun importFiles(files: List<File>, labels: List<String>) {
@@ -192,12 +173,7 @@ fun main() {
     }
 
     renderButton.onclick = {
-        val cell = activeCell
-        if (cell == null) {
-            status?.textContent = "No imported ENC cell is available. Select a .000 file first or use the sample button."
-        } else {
-            renderCell(cell, "selected ENC")
-        }
+        activeCell?.let { renderCell(it, "selected ENC") } ?: run { status?.textContent = "No imported ENC cell is available. Select a .000 file first or use the sample button." }
         null
     }
 
@@ -206,44 +182,5 @@ fun main() {
         null
     }
 
-    status?.textContent = "Phase 16 demo ready. Select an ENC .000 file to import, or render the built-in S-52 sample."
+    status?.textContent = "Phase 16C demo ready. Select an ENC .000 file to import, or render the built-in S-52 sample."
 }
-
-private fun sampleDataset(): S57Dataset = S57Dataset(
-    summary = S57CellSummary(
-        cellId = "PHASE12-S52-SAMPLE",
-        name = "PHASE12-S52-SAMPLE",
-        bounds = GeoBounds(-75.0, 39.0, -73.0, 41.0),
-        featureCount = 4
-    ),
-    features = listOf(
-        S57Feature(
-            id = 1,
-            objectClass = "DEPARE",
-            attributes = mapOf("DRVAL1" to S57Value.Decimal(0.0), "DRVAL2" to S57Value.Decimal(10.0)),
-            geometry = S57Geometry.Polygon(listOf(listOf(
-                GeoPoint(-74.8, 39.2),
-                GeoPoint(-73.2, 39.2),
-                GeoPoint(-73.2, 40.8),
-                GeoPoint(-74.8, 40.8),
-                GeoPoint(-74.8, 39.2)
-            )))
-        ),
-        S57Feature(
-            id = 2,
-            objectClass = "DEPCNT",
-            geometry = S57Geometry.LineString(listOf(GeoPoint(-74.8, 40.0), GeoPoint(-73.2, 40.0)))
-        ),
-        S57Feature(
-            id = 3,
-            objectClass = "SOUNDG",
-            attributes = mapOf("VALSOU" to S57Value.Decimal(4.2)),
-            geometry = S57Geometry.MultiPoint(listOf(GeoPoint(-74.1, 40.18), GeoPoint(-73.85, 40.28), GeoPoint(-74.0, 40.0)))
-        ),
-        S57Feature(
-            id = 4,
-            objectClass = "BOYLAT",
-            geometry = S57Geometry.Point(GeoPoint(-73.65, 40.52))
-        )
-    )
-)
