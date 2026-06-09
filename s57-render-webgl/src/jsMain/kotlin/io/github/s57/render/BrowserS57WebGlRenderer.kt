@@ -53,25 +53,21 @@ class BrowserS57WebGlRenderer(
             depthMeshEnabled = request.depthMesh.enabled
         )
     }
-    /**
-     * Render this frame through the real s52-kotlin-webgl portrayal and WebGL backend.
-     *
-     * This is the path consumers should use when they want actual S-52 symbol,
-     * line-style, area-fill, text, and sounding commands instead of the earlier
-     * Phase 7 geometry-debug renderer. If the S-52 runtime produces zero commands
-     * we deliberately fall back to the debug renderer but report that in the
-     * summary message.
-     */
-    fun renderS52Frame(
-        canvasId: String,
-        frame: StaticChartFrame
-    ): RenderedFrameSummary {
+
+    fun renderS52Frame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
+        if (canvas.getContext("webgl2") == null) {
+            return frame.summary().copy(message = "S-52 WebGL render failed: WebGL2 is not available")
+        }
+
         val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
         if (sourceFeatures.isEmpty()) {
-            return renderFrame(canvasId, frame).copy(message = "No source S-57 features available for S-52 portrayal; used debug geometry renderer")
+            return frame.summary().copy(
+                message = "S-52 render skipped: projectedSourceFeatures=0 queried=" + frame.queriedFeatureCount + " adapted=" + frame.adaptedFeatureCount + "; no debug fallback used"
+            )
         }
+
         val bridge = BrowserS52Bridge()
         val portrayed = bridge.portray(
             features = sourceFeatures,
@@ -79,20 +75,38 @@ class BrowserS57WebGlRenderer(
             scaleDenominator = frame.request.scaleDenominator
         )
         if (portrayed.commands.isEmpty()) {
-            return renderFrame(canvasId, frame).copy(message = "S-52 portrayal produced zero commands; used debug geometry renderer diagnostics=${portrayed.diagnostics.size}")
+            return frame.summary().copy(
+                message = "S-52 portrayal produced zero commands: profile=" + portrayed.profile + " encFeatures=" + portrayed.featureCount + " diagnostics=" + portrayed.diagnostics.size + "; no debug fallback used"
+            )
         }
-        val renderer = WebGlS52Renderer(canvas, bridge.presLib)
-        val settings = portrayed.settings
+
         val viewport = RenderViewport(
             west = frame.request.bounds.minLon,
             south = frame.request.bounds.minLat,
             east = frame.request.bounds.maxLon,
             north = frame.request.bounds.maxLat
         )
-        val stats = renderer.render(portrayed.commands, settings, viewport)
-        return frame.summary().copy(
-            message = "S-52 WebGL rendered commands=${portrayed.commands.size} symbols=${stats.symbolCount} lines=${stats.lineCount} areas=${stats.areaFillCount + stats.areaPatternCount} text=${stats.textCount + stats.soundingCount} diagnostics=${portrayed.diagnostics.size}"
-        )
+        return try {
+            val renderer = WebGlS52Renderer(canvas, bridge.presLib)
+            val stats = renderer.render(portrayed.commands, portrayed.settings, viewport)
+            frame.summary().copy(
+                message = "S-52 WebGL rendered profile=" + portrayed.profile +
+                    " encFeatures=" + portrayed.featureCount +
+                    " commands=" + portrayed.commands.size +
+                    " drawCalls=" + stats.drawCalls +
+                    " symbols=" + stats.symbolCount +
+                    " lines=" + stats.lineCount +
+                    " areas=" + (stats.areaFillCount + stats.areaPatternCount) +
+                    " text=" + (stats.textCount + stats.soundingCount) +
+                    " diagnostics=" + portrayed.diagnostics.size
+            )
+        } catch (t: Throwable) {
+            frame.summary().copy(
+                message = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
+                    " encFeatures=" + portrayed.featureCount +
+                    " commands=" + portrayed.commands.size
+            )
+        }
     }
 
     fun renderFrame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
@@ -189,18 +203,8 @@ class BrowserS57WebGlRenderer(
 
         companion object {
             fun create(gl: WebGLRenderingContext): SimpleColorProgram? {
-                val vertex = compile(gl, WebGLRenderingContext.VERTEX_SHADER, """
-                    attribute vec2 a_position;
-                    void main() {
-                        gl_Position = vec4(a_position, 0.0, 1.0);
-                        gl_PointSize = 6.0;
-                    }
-                """.trimIndent()) ?: return null
-                val fragment = compile(gl, WebGLRenderingContext.FRAGMENT_SHADER, """
-                    precision mediump float;
-                    uniform vec4 u_color;
-                    void main() { gl_FragColor = u_color; }
-                """.trimIndent()) ?: return null
+                val vertex = compile(gl, WebGLRenderingContext.VERTEX_SHADER, "attribute vec2 a_position; void main() { gl_Position = vec4(a_position, 0.0, 1.0); gl_PointSize = 6.0; }") ?: return null
+                val fragment = compile(gl, WebGLRenderingContext.FRAGMENT_SHADER, "precision mediump float; uniform vec4 u_color; void main() { gl_FragColor = u_color; }") ?: return null
                 val p = gl.createProgram() ?: return null
                 gl.attachShader(p, vertex)
                 gl.attachShader(p, fragment)
@@ -222,5 +226,4 @@ class BrowserS57WebGlRenderer(
             }
         }
     }
-
 }

@@ -5,12 +5,17 @@
   <title>s57-kotlin-webgl demo</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; background: #f6f8fb; color: #16202a; }
-    .shell { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+    .shell { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
     .panel { background: white; border: 1px solid #d8dee8; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
-    canvas { width: 100%; max-width: 960px; height: 540px; background: #101923; border-radius: 12px; border: 1px solid #334; }
-    pre { white-space: pre-wrap; font-size: 13px; }
+    .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    button { border: 1px solid #b8c3d6; border-radius: 8px; padding: 8px 10px; background: #f8fafc; cursor: pointer; font-weight: 600; }
+    button:hover { background: #eef4ff; }
+    canvas { width: 100%; max-width: 1100px; height: 620px; background: #101923; border-radius: 12px; border: 1px solid #334; }
+    pre { white-space: pre-wrap; font-size: 13px; line-height: 1.35; }
     .warning { color: #9a3412; font-weight: 600; }
-  .events{white-space:pre-wrap;font-family:monospace;background:#f6f8fa;padding:12px;border:1px solid #ddd}</style>
+    .events { white-space: pre-wrap; font-family: monospace; background: #f6f8fa; padding: 12px; border: 1px solid #ddd; }
+    .hint { color: #485568; font-size: 13px; }
+  </style>
 </head>
 <body>
   <h1>s57-kotlin-webgl</h1>
@@ -18,12 +23,16 @@
   <div class="shell">
     <section class="panel">
       <h2>Load local ENC files</h2>
+      <p class="hint">Select a NOAA ENC <code>.000</code> file. The browser imports it through S57WebGlEngine, indexes the decoded cell, and renders the active cell through the real S-52 WebGL2 path. S-52 atlas resources are resolved from the external s52-kotlin-webgl project at build time.</p>
       <input id="fileInput" type="file" multiple />
-      <button id="renderButton">Render S-52 sample chart</button>
-      <h3>Selected files</h3>
+      <div class="actions">
+        <button id="renderButton">Render selected ENC with S-52</button>
+        <button id="sampleButton">Render built-in S-52 sample</button>
+      </div>
+      <h3>Selected / imported files</h3>
       <pre id="fileList">No files selected.</pre>
-      <h3>Status</h3>
-      <pre id="status">Phase 0 demo shell ready.</pre>
+      <h3>Status / diagnostics</h3>
+      <pre id="status">Phase 12/13/14 demo shell ready.</pre>
       <h3>Pointer / gesture events</h3>
       <pre id="events" class="events">No interaction yet.</pre>
     </section>

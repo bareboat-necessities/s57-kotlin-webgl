@@ -22,8 +22,19 @@ import io.github.s57.core.S57Feature
 import io.github.s57.core.S57Geometry
 import io.github.s57.core.S57Value
 
+internal enum class BrowserS52RuntimeProfile {
+    OpenCpn,
+    S52LibCompat
+}
+
+private fun BrowserS52RuntimeProfile.createSession(): S52PortrayalSession = when (this) {
+    BrowserS52RuntimeProfile.OpenCpn -> S52PortrayalSession.openCpn(failOnStaticCompletenessErrors = false)
+    BrowserS52RuntimeProfile.S52LibCompat -> S52PortrayalSession.s52LibCompat(failOnStaticCompletenessErrors = false)
+}
+
 internal class BrowserS52Bridge(
-    private val session: S52PortrayalSession = S52PortrayalSession.s52LibCompat(failOnStaticCompletenessErrors = false)
+    private val profile: BrowserS52RuntimeProfile = BrowserS52RuntimeProfile.OpenCpn,
+    private val session: S52PortrayalSession = profile.createSession()
 ) {
     val presLib get() = session.presLib
 
@@ -37,7 +48,7 @@ internal class BrowserS52Bridge(
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
         val result = session.portray(S52PortrayalRequest(encFeatures, settings, context))
-        return BrowserS52PortrayalResult(encFeatures.size, result.commands, diagnostics, settings)
+        return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, diagnostics, settings)
     }
 
     private fun S57Feature.toEncFeature(diagnostics: MutableList<String>): EncFeature? {
@@ -74,7 +85,7 @@ internal class BrowserS52Bridge(
             if (attr == null) {
                 diagnostics += "feature=$featureId ignored unsupported attribute=${name.uppercase()}"
             } else {
-                pairs += attr to value.toS52Value()
+                pairs += attr to value.rawToS52Value()
             }
         }
         return S57Attributes.of(*pairs.toTypedArray())
@@ -82,6 +93,7 @@ internal class BrowserS52Bridge(
 }
 
 internal data class BrowserS52PortrayalResult(
+    val profile: BrowserS52RuntimeProfile,
     val featureCount: Int,
     val commands: List<S52DrawCommand>,
     val diagnostics: List<String>,
@@ -128,31 +140,25 @@ private fun S57Geometry.toS52Geometry(featureId: Long, diagnostics: MutableList<
 
 private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
 
-private fun S57Value.toS52Value(): S52Value = when (this) {
+private fun S57Value.rawToS52Value(): S52Value = when (this) {
     S57Value.Empty -> S52Value.Empty
     is S57Value.Text -> S52Value.Text(value)
     is S57Value.Integer -> S52Value.Integer(value)
     is S57Value.Decimal -> S52Value.Decimal(value)
-    is S57Value.ListValue -> S52Value.ListValue(values.map { it.toS52Value() })
+    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawToS52Value() })
 }
 
 private fun S57Value.asIntOrNull(): Int? = when (this) {
     is S57Value.Integer -> value
     is S57Value.Decimal -> value.toInt()
-    is S57Value.Text -> value.toIntOrNull()
+    is S57Value.Text -> value.trim().toIntOrNull()
     is S57Value.ListValue -> values.firstOrNull()?.asIntOrNull()
     S57Value.Empty -> null
 }
 
-private fun s52ObjectClass(acronym: String): S57ObjectClass? {
-    val key = acronym.trim()
-    return S57ObjectClass.entries.firstOrNull { it.acronym.equals(key, ignoreCase = true) }
-}
+private fun s52ObjectClass(acronym: String): S57ObjectClass? = S57ObjectClass.fromAcronym(acronym)
 
-private fun s52Attribute(acronym: String): S57Attribute? {
-    val key = acronym.trim()
-    return S57Attribute.entries.firstOrNull { it.acronym.equals(key, ignoreCase = true) }
-}
+private fun s52Attribute(acronym: String): S57Attribute? = S57Attribute.fromAcronym(acronym)
 
 private fun browserS52Settings(
     paletteName: String,
