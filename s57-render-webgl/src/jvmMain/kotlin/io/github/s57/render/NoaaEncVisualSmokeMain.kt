@@ -4,7 +4,7 @@ import java.io.File
 import kotlin.system.exitProcess
 
 /**
- * Phase 21 JVM smoke harness for a real NOAA ENC .000 file.
+ * Phase 21/24 JVM smoke harness for a real NOAA ENC .000 file.
  *
  * Usage:
  *   gradle :s57-render-webgl:jvmRun -PmainClass=io.github.s57.render.NoaaEncVisualSmokeMainKt --args="/path/to/US5xxxxx.000 build/phase21/smoke.svg"
@@ -20,15 +20,23 @@ fun main(args: Array<String>) {
     val svgFile = args.getOrNull(1)?.let(::File)
 
     val engine = S57WebGlEngine()
-    val imported = engine.importS57Bytes(encFile.readBytes())
+    val collector = PerformanceMetricCollector()
+    val fileStart = monotonicNowMs()
+    val bytes = encFile.readBytes()
+    collector.add("file.read", monotonicNowMs() - fileStart)
+    val imported = engine.importS57Bytes(bytes)
+    collector.addTiming("import", imported.timing)
     val request = chartRenderRequestForCell(imported.cell, widthPx = 1280, heightPx = 800).copy(
         centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
         renderMode = ChartRenderMode.Flat2D
     )
     val rendered = engine.render(request)
+    collector.addTiming("render", rendered.timing)
     val smoke = noaaEncVisualSmokeReport(imported, rendered)
 
     println(smoke.toPlainText())
+    println(performanceFrameReport(rendered).toPlainText())
+    println(collector.toPlainText())
 
     svgFile?.let { target ->
         target.parentFile?.mkdirs()
