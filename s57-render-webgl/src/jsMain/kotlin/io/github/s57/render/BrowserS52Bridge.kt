@@ -98,7 +98,23 @@ internal data class BrowserS52PortrayalResult(
     val commands: List<S52DrawCommand>,
     val diagnostics: List<String>,
     val settings: MarinerSettings
-)
+) {
+    fun toSummary(failureStage: String = "none", drawCallCount: Int = 0): S52RenderSummary = S52RenderSummary(
+        profile = profile.name,
+        encFeatureCount = featureCount,
+        commandCount = commands.size,
+        drawCallCount = drawCallCount,
+        areaCommandCount = commands.count { it is S52DrawCommand.AreaFill || it is S52DrawCommand.AreaPattern },
+        lineCommandCount = commands.count { it is S52DrawCommand.LineSimple || it is S52DrawCommand.LineComplex },
+        symbolCommandCount = commands.count { it is S52DrawCommand.PointSymbol },
+        textCommandCount = commands.count { it is S52DrawCommand.Text },
+        soundingCommandCount = commands.count { it is S52DrawCommand.Sounding },
+        diagnosticCount = diagnostics.size,
+        unsupportedObjectClassCount = diagnostics.count { "unsupported objectClass" in it },
+        unsupportedAttributeCount = diagnostics.count { "unsupported attribute" in it },
+        failureStage = failureStage
+    )
+}
 
 private fun S57Geometry.toS52Primitive(): PrimitiveType? = when (this) {
     S57Geometry.Empty -> null
