@@ -14,12 +14,16 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.transaction(storeName, "readonly")
+                        val tx = db.asDynamic().transaction(storeName, "readonly")
                         val store = tx.objectStore(storeName)
                         val request = store.getAll()
                         request.onsuccess = {
-                            val rows = request.result.unsafeCast<Array<dynamic>>()
-                            val entries = rows.mapNotNull { row -> row.toCacheEntryOrNull() }
+                            val rows = request.result
+                            val entries = mutableListOf<BrowserChartCacheEntry>()
+                            val length = (rows.length as Number).toInt()
+                            for (index in 0 until length) {
+                                rows[index].toCacheEntryOrNull()?.let(entries::add)
+                            }
                             callback(Result.success(entries))
                             null
                         }
@@ -59,7 +63,7 @@ class BrowserChartIndexedDbCache(
                         row.cachedAtMillis = entry.cachedAtMillis
                         row.payload = bytes.toInt8Array()
 
-                        val tx = db.transaction(storeName, "readwrite")
+                        val tx = db.asDynamic().transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
                         val request = store.put(row)
                         request.onsuccess = {
@@ -84,7 +88,7 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.transaction(storeName, "readonly")
+                        val tx = db.asDynamic().transaction(storeName, "readonly")
                         val store = tx.objectStore(storeName)
                         val request = store.get(cacheKey)
                         request.onsuccess = {
@@ -93,7 +97,7 @@ class BrowserChartIndexedDbCache(
                                 callback(Result.success(null))
                             } else {
                                 val entry = row.toCacheEntryOrNull()
-                                val payload = row.payload.unsafeCast<Int8Array>().toByteArray()
+                                val payload = row.asDynamic().payload.unsafeCast<Int8Array>().toByteArray()
                                 callback(Result.success(if (entry == null) null else CachedChartPayload(entry, payload)))
                             }
                             null
@@ -116,7 +120,7 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.transaction(storeName, "readwrite")
+                        val tx = db.asDynamic().transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
                         val request = store.clear()
                         request.onsuccess = {
@@ -136,7 +140,7 @@ class BrowserChartIndexedDbCache(
         }
     }
 
-    private fun open(callback: (Result<dynamic>) -> Unit) {
+    private fun open(callback: (Result<Any>) -> Unit) {
         val indexedDb = window.asDynamic().indexedDB
         if (indexedDb == null) {
             callback(Result.failure(IllegalStateException("IndexedDB is not available in this browser")))
@@ -151,7 +155,7 @@ class BrowserChartIndexedDbCache(
             null
         }
         request.onsuccess = {
-            callback(Result.success(request.result))
+            callback(Result.success(request.result as Any))
             null
         }
         request.onerror = {
@@ -166,14 +170,15 @@ data class CachedChartPayload(
     val bytes: ByteArray
 )
 
-private fun dynamic.toCacheEntryOrNull(): BrowserChartCacheEntry? = try {
+private fun Any?.toCacheEntryOrNull(): BrowserChartCacheEntry? = try {
+    val row = this.asDynamic()
     BrowserChartCacheEntry(
-        cacheKey = cacheKey as String,
-        fileName = fileName as String,
-        byteCount = (byteCount as Number).toInt(),
-        cellId = cellId as String,
-        featureCount = (featureCount as Number).toInt(),
-        cachedAtMillis = (cachedAtMillis as Number).toDouble()
+        cacheKey = row.cacheKey as String,
+        fileName = row.fileName as String,
+        byteCount = (row.byteCount as Number).toInt(),
+        cellId = row.cellId as String,
+        featureCount = (row.featureCount as Number).toInt(),
+        cachedAtMillis = (row.cachedAtMillis as Number).toDouble()
     )
 } catch (_: Throwable) {
     null
