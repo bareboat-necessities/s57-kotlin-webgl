@@ -8,11 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      S52_VERSION: "0.3.0"
-      S52_RELEASE_MAVEN_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.3.0/s52-kotlin-webgl-release-maven-0.3.0.zip"
-      S52_RELEASE_MAVEN_SHA256: "ed4ece6664670fec275f1d3d8d2ff52f1dfa54384501ebd97553c670e9687a79"
-      S52_RELEASE_SOURCE_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.3.0/s52-kotlin-webgl-0.3.0-phase22-source.zip"
-      S52_RELEASE_SOURCE_SHA256: "d75189103d710c9c5065a6fc392a8d38b0e1d05ddc7c4eba3a0027f6e866f900"
+      S52_VERSION: "0.5.0"
+      S52_RELEASE_MAVEN_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.0/s52-kotlin-webgl-release-maven-0.5.0.zip"
+      S52_RELEASE_MAVEN_SHA256: "3938f365b9ce742c028d4f7686cd4b02b21a1e329736028f50775a412ef35b6f"
+      S52_RELEASE_SOURCE_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.0/s52-kotlin-webgl-0.5.0-phase22-source.zip"
+      S52_RELEASE_SOURCE_SHA256: "af63776fbc235cbb4fb031c2000abece7a021968a6b1ad78793cbae74de3d054"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
