@@ -44,5 +44,5 @@ jobs:
           fi
           echo "S52_SOURCE_DIR=${{ github.workspace }}/$S52_SOURCE_DIR" >> "$GITHUB_ENV"
           echo "Using S52 source composite build at $S52_SOURCE_DIR"
-      - name: Build Phase 21
-        run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
+      - name: Build Phase 22
+        run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build :demo:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
