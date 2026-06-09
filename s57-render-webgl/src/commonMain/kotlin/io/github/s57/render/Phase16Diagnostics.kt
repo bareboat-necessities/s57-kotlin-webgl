@@ -11,6 +11,9 @@ data class Phase16Counters(
     val adaptedFeatures: Int = 0,
     val projectedFeatures: Int = 0,
     val visibleFeatures: Int = 0,
+    val onscreenFeatures: Int = visibleFeatures,
+    val offscreenFeatures: Int = 0,
+    val clippedFeatures: Int = 0,
     val emptyGeometry: Int = 0,
     val adapterDiagnostics: Int = 0,
     val s52: S52RenderSummary = S52RenderSummary()
@@ -22,6 +25,7 @@ data class Phase16Counters(
         indexedFeatures == 0 -> "index"
         queriedFeatures == 0 -> "query"
         projectedFeatures == 0 -> "projection"
+        onscreenFeatures == 0 && offscreenFeatures > 0 -> "viewport"
         visibleFeatures == 0 -> "visible-geometry"
         adaptedFeatures == 0 -> "adapter"
         s52.failureStage != "none" -> s52.failureStage
@@ -35,7 +39,8 @@ fun Phase16Counters.lines(): List<String> = listOf(
     "rawFeatures=" + rawFeatures + " rawVectors=" + rawVectors,
     "decodedFeatures=" + decodedFeatures + " hasBounds=" + hasBounds + " geometryDiagnostics=" + geometryDiagnostics,
     "indexedFeatures=" + indexedFeatures + " queriedFeatures=" + queriedFeatures + " adaptedFeatures=" + adaptedFeatures + " projectedFeatures=" + projectedFeatures,
-    "visibleFeatures=" + visibleFeatures + " emptyGeometry=" + emptyGeometry + " adapterDiagnostics=" + adapterDiagnostics,
+    "visibleFeatures=" + visibleFeatures + " onscreenFeatures=" + onscreenFeatures + " offscreenFeatures=" + offscreenFeatures + " clippedFeatures=" + clippedFeatures,
+    "emptyGeometry=" + emptyGeometry + " adapterDiagnostics=" + adapterDiagnostics,
     "s52Profile=" + s52.profile + " s52EncFeatures=" + s52.encFeatureCount + " s52Commands=" + s52.commandCount + " s52DrawCalls=" + s52.drawCallCount,
     "s52Areas=" + s52.areaCommandCount + " s52Lines=" + s52.lineCommandCount + " s52Symbols=" + s52.symbolCommandCount + " s52Text=" + s52.textCommandCount + " s52Soundings=" + s52.soundingCommandCount
 )
