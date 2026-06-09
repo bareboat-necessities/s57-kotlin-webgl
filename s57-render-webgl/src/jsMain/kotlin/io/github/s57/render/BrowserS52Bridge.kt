@@ -44,15 +44,57 @@ internal class BrowserS52Bridge(
         scaleDenominator: Double
     ): BrowserS52PortrayalResult {
         val diagnostics = mutableListOf<String>()
-        val encFeatures = features.mapNotNull { it.toEncFeature(diagnostics) }
+        val encFeatures = features.flatMap { it.toEncFeatures(diagnostics) }
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
         val result = session.portray(S52PortrayalRequest(encFeatures, settings, context))
         return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, diagnostics, settings)
     }
 
-    private fun S57Feature.toEncFeature(diagnostics: MutableList<String>): EncFeature? {
-        val primitive = geometry.toS52Primitive()
+    private fun S57Feature.toEncFeatures(diagnostics: MutableList<String>): List<EncFeature> {
+        val normalizedObject = objectClass.uppercase()
+        return when {
+            normalizedObject == "SOUNDG" && geometry is S57Geometry.MultiPoint -> splitSoundingEncFeatures(geometry.points, diagnostics)
+            geometry is S57Geometry.MultiPolygon -> splitMultiPolygonEncFeatures(geometry.polygons, diagnostics)
+            else -> listOfNotNull(toEncFeature(id, geometry, attributes, diagnostics))
+        }
+    }
+
+    private fun S57Feature.splitMultiPolygonEncFeatures(polygons: List<S57Geometry.Polygon>, diagnostics: MutableList<String>): List<EncFeature> {
+        if (polygons.isEmpty()) {
+            diagnostics += "feature=$id multipolygon is empty"
+            return emptyList()
+        }
+        diagnostics += "feature=$id multipolygon split into ${polygons.size} features"
+        return polygons.mapIndexedNotNull { index, polygon ->
+            toEncFeature(splitId(index), polygon, attributes, diagnostics)
+        }
+    }
+
+    private fun S57Feature.splitSoundingEncFeatures(points: List<GeoPoint>, diagnostics: MutableList<String>): List<EncFeature> {
+        if (points.isEmpty()) {
+            diagnostics += "feature=$id SOUNDG multipoint is empty"
+            return emptyList()
+        }
+        val valsou = attributes["VALSOU"]?.splitListValues().orEmpty()
+        if (valsou.isNotEmpty() && valsou.size != points.size) {
+            diagnostics += "feature=$id SOUNDG VALSOU count ${valsou.size} does not match point count ${points.size}"
+        }
+        return points.mapIndexedNotNull { index, point ->
+            val attrs = attributes.toMutableMap()
+            val pointDepth = valsou.getOrNull(index) ?: valsou.firstOrNull() ?: attributes["VALSOU"]
+            if (pointDepth != null) attrs["VALSOU"] = pointDepth
+            toEncFeature(splitId(index), S57Geometry.Point(point), attrs, diagnostics)
+        }
+    }
+
+    private fun S57Feature.toEncFeature(
+        encId: Long,
+        sourceGeometry: S57Geometry,
+        sourceAttributes: Map<String, S57Value>,
+        diagnostics: MutableList<String>
+    ): EncFeature? {
+        val primitive = sourceGeometry.toS52Primitive()
         if (primitive == null) {
             diagnostics += "feature=$id no renderable geometry"
             return null
@@ -66,26 +108,29 @@ internal class BrowserS52Bridge(
             diagnostics += "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
             return null
         }
-        val geometry = geometry.toS52Geometry(id, diagnostics) ?: return null
+        val geometry = sourceGeometry.toS52Geometry(id, diagnostics) ?: return null
         return EncFeature(
-            id = id,
+            id = encId,
             objectClass = objectClass,
             primitive = primitive,
-            attributes = attributes.toS52Attributes(id, diagnostics),
+            attributes = sourceAttributes.toS52Attributes(id, diagnostics),
             geometry = geometry,
-            scaleMin = attributes["SCAMIN"]?.asIntOrNull(),
-            scaleMax = attributes["SCAMAX"]?.asIntOrNull()
+            scaleMin = sourceAttributes["SCAMIN"]?.asIntOrNull(),
+            scaleMax = sourceAttributes["SCAMAX"]?.asIntOrNull()
         )
     }
 
+    private fun S57Feature.splitId(index: Int): Long = id * 1000L + index.toLong() + 1L
+
     private fun Map<String, S57Value>.toS52Attributes(featureId: Long, diagnostics: MutableList<String>): S57Attributes {
         val pairs = mutableListOf<Pair<S57Attribute, S52Value>>()
-        for ((name, value) in this) {
+        for ((rawName, value) in this) {
+            val name = rawName.uppercase()
             val attr = s52Attribute(name)
             if (attr == null) {
-                diagnostics += "feature=$featureId ignored unsupported attribute=${name.uppercase()}"
+                diagnostics += "feature=$featureId ignored unsupported attribute=$name"
             } else {
-                pairs += attr to value.rawToS52Value()
+                pairs += attr to value.rawToS52Value(name)
             }
         }
         return S57Attributes.of(*pairs.toTypedArray())
@@ -142,26 +187,30 @@ private fun S57Geometry.toS52Geometry(featureId: Long, diagnostics: MutableList<
             )
         }
     }
-    is S57Geometry.MultiPolygon -> {
-        val first = polygons.firstOrNull()
-        if (first == null) {
-            diagnostics += "feature=$featureId multipolygon is empty"
-            null
-        } else {
-            diagnostics += "feature=$featureId multipolygon flattened to first polygon"
-            first.toS52Geometry(featureId, diagnostics)
-        }
-    }
+    is S57Geometry.MultiPolygon -> null
 }
 
 private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
 
-private fun S57Value.rawToS52Value(): S52Value = when (this) {
+private fun S57Value.rawToS52Value(attributeName: String? = null): S52Value = when (this) {
     S57Value.Empty -> S52Value.Empty
-    is S57Value.Text -> S52Value.Text(value)
+    is S57Value.Text -> value.textToS52Value(attributeName)
     is S57Value.Integer -> S52Value.Integer(value)
     is S57Value.Decimal -> S52Value.Decimal(value)
-    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawToS52Value() })
+    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawToS52Value(attributeName) })
+}
+
+private fun String.textToS52Value(attributeName: String?): S52Value {
+    val trimmed = trim()
+    if (attributeName in NUMERIC_DECIMAL_ATTRIBUTES) trimmed.toDoubleOrNull()?.let { return S52Value.Decimal(it) }
+    if (attributeName in NUMERIC_INTEGER_ATTRIBUTES) trimmed.toIntOrNull()?.let { return S52Value.Integer(it) }
+    return S52Value.Text(this)
+}
+
+private fun S57Value.splitListValues(): List<S57Value> = when (this) {
+    is S57Value.ListValue -> values
+    is S57Value.Text -> value.split(',', ';', '|').mapNotNull { token -> token.trim().takeIf { it.isNotEmpty() }?.let(S57Value::Text) }
+    else -> listOf(this)
 }
 
 private fun S57Value.asIntOrNull(): Int? = when (this) {
@@ -175,6 +224,9 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
 private fun s52ObjectClass(acronym: String): S57ObjectClass? = S57ObjectClass.fromAcronym(acronym)
 
 private fun s52Attribute(acronym: String): S57Attribute? = S57Attribute.fromAcronym(acronym)
+
+private val NUMERIC_DECIMAL_ATTRIBUTES = setOf("DRVAL1", "DRVAL2", "HEIGHT", "VALDCO", "VALSOU")
+private val NUMERIC_INTEGER_ATTRIBUTES = setOf("CATOBS", "CATLAM", "CATREA", "CATWRK", "COLOUR", "COLPAT", "LITCHR", "SCAMIN", "SCAMAX", "SIGGRP", "WATLEV")
 
 private fun browserS52Settings(
     paletteName: String,
