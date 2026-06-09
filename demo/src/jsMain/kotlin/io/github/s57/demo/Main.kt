@@ -2,9 +2,12 @@ package io.github.s57.demo
 
 import io.github.s57.core.GeoBounds
 import io.github.s57.core.S57CellSummary
+import io.github.s57.render.BrowserChartCacheEntry
+import io.github.s57.render.BrowserChartIndexedDbCache
 import io.github.s57.render.BrowserChartInput
 import io.github.s57.render.BrowserS57FileImporter
 import io.github.s57.render.BrowserS57WebGlRenderer
+import io.github.s57.render.CachedChartPayload
 import io.github.s57.render.CenterCrosshairConfig
 import io.github.s57.render.ChartInteractionController
 import io.github.s57.render.ChartInteractionListener
@@ -15,6 +18,7 @@ import io.github.s57.render.Phase16Counters
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
+import io.github.s57.render.browserChartCacheSummary
 import io.github.s57.render.chartRenderRequestForCell
 import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
@@ -25,6 +29,7 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLPreElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.files.File
 import kotlin.math.roundToInt
@@ -46,6 +51,20 @@ fun main() {
     val events = document.getElementById("events")
     val canvas = document.getElementById("chartCanvas") as HTMLCanvasElement
 
+    val restoreCacheButton = document.createElement("button") as HTMLButtonElement
+    restoreCacheButton.textContent = "Restore cached cells"
+    val clearCacheButton = document.createElement("button") as HTMLButtonElement
+    clearCacheButton.textContent = "Clear browser cache"
+    sampleButton.parentElement?.appendChild(restoreCacheButton)
+    sampleButton.parentElement?.appendChild(clearCacheButton)
+
+    val cacheHeading = document.createElement("h3")
+    cacheHeading.textContent = "Cached cells"
+    val cacheList = document.createElement("pre") as HTMLPreElement
+    cacheList.textContent = "Browser cache not loaded yet."
+    status?.parentElement?.appendChild(cacheHeading)
+    status?.parentElement?.appendChild(cacheList)
+
     BrowserChartInput(ChartInteractionController(listener = object : ChartInteractionListener {
         override fun onUserEvent(event: ChartUserEvent) {
             events?.textContent = event.toString()
@@ -55,8 +74,10 @@ fun main() {
     val engine = S57WebGlEngine()
     val importer = BrowserS57FileImporter(engine)
     val renderer = BrowserS57WebGlRenderer()
+    val chartCache = BrowserChartIndexedDbCache()
     var imports = emptyList<S57EngineImportResult>()
     var failures = emptyList<String>()
+    var cachedEntries = emptyList<BrowserChartCacheEntry>()
     var activeCellId: String? = null
     var selectedFiles = emptyList<File>()
     var selectedLabels = emptyList<String>()
@@ -70,6 +91,20 @@ fun main() {
     fun formatBounds(bounds: GeoBounds?): String = bounds?.let {
         "W=${it.minLon}, S=${it.minLat}, E=${it.maxLon}, N=${it.maxLat}"
     } ?: "none"
+
+    fun updateCacheList(entries: List<BrowserChartCacheEntry> = cachedEntries) {
+        cachedEntries = entries
+        cacheList.textContent = browserChartCacheSummary(cachedEntries)
+    }
+
+    fun refreshCacheList() {
+        chartCache.list { result ->
+            result.fold(
+                onSuccess = { updateCacheList(it) },
+                onFailure = { cacheList.textContent = "Browser cache unavailable: " + (it.message ?: it.toString()) }
+            )
+        }
+    }
 
     fun updateCellSelector() {
         val allCells = cells()
@@ -122,7 +157,7 @@ fun main() {
     }
 
     fun importSummary(): String = buildString {
-        appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size + " cells=" + cells().size)
+        appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size + " cells=" + cells().size + " cached=" + cachedEntries.size)
         val cell = activeCell()
         appendLine(if (cell == null) "activeCell=none" else "activeCell=" + cell.cellId + " bounds=" + (cell.bounds ?: "none") + " features=" + cell.featureCount)
         imports.forEachIndexed { index, result ->
@@ -197,7 +232,7 @@ fun main() {
 
     fun renderActive(label: String = "active cell") {
         activeCell()?.let { renderCell(it, label) } ?: run {
-            status?.textContent = "No imported ENC cell is available. Select a .000 file first or use the sample button."
+            status?.textContent = "No imported ENC cell is available. Select a .000 file first, restore cache, or use the sample button."
             updateCellSummary()
         }
     }
@@ -227,7 +262,15 @@ fun main() {
         selectedLabels = emptyList()
         updateFileList()
         updateCellSummary()
-        status?.textContent = "Cleared imported cells."
+        status?.textContent = "Cleared imported cells. Browser cache is unchanged."
+    }
+
+    fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult, after: () -> Unit) {
+        chartCache.put(fileName, bytes, imported) { result ->
+            result.onFailure { failures = failures + (fileName + ": cache failed: " + (it.message ?: it.toString())) }
+            refreshCacheList()
+            after()
+        }
     }
 
     fun importFiles(files: List<File>, labels: List<String>) {
@@ -254,20 +297,90 @@ fun main() {
             }
             val file = files[index]
             status?.textContent = "Importing " + file.name + " (" + (index + 1) + "/" + files.size + ")..."
-            importer.importFile(file) { result ->
-                val ok = result.getOrNull()
-                if (ok == null) {
-                    val err = result.exceptionOrNull()
+            importer.readFileBytes(file) { bytesResult ->
+                val bytes = bytesResult.getOrNull()
+                if (bytes == null) {
+                    val err = bytesResult.exceptionOrNull()
                     failures = failures + (file.name + ": " + (err?.message ?: err.toString()))
+                    next(index + 1)
                 } else {
-                    imports = imports + ok
+                    try {
+                        val imported = engine.importS57Bytes(bytes)
+                        imports = imports + imported
+                        cacheImportedPayload(file.name, bytes, imported) {
+                            updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
+                            updateCellSummary()
+                            next(index + 1)
+                        }
+                    } catch (t: Throwable) {
+                        failures = failures + (file.name + ": " + (t.message ?: t.toString()))
+                        next(index + 1)
+                    }
                 }
-                updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size))
-                updateCellSummary()
-                next(index + 1)
             }
         }
         next(0)
+    }
+
+    fun restoreCachedPayloads(entries: List<BrowserChartCacheEntry>) {
+        engine.clear()
+        imports = emptyList()
+        failures = emptyList()
+        activeCellId = null
+        activeScaleOverride = null
+        scaleInput.value = ""
+        selectedFiles = emptyList()
+        selectedLabels = entries.map { "cached: " + it.label() }
+        updateFileList()
+        updateCellSummary()
+        if (entries.isEmpty()) {
+            status?.textContent = "No cached cells to restore."
+            return
+        }
+        fun next(index: Int) {
+            if (index >= entries.size) {
+                activeCellId = chooseInitialActiveCell(cells(), activeCellId)
+                updateCellSummary()
+                status?.textContent = "Restored cached cells.\n" + importSummary()
+                renderActive("restored cache")
+                return
+            }
+            val entry = entries[index]
+            status?.textContent = "Restoring cached " + entry.fileName + " (" + (index + 1) + "/" + entries.size + ")..."
+            chartCache.load(entry.cacheKey) { loaded ->
+                loaded.fold(
+                    onSuccess = { payload: CachedChartPayload? ->
+                        if (payload == null) {
+                            failures = failures + (entry.fileName + ": cached payload missing")
+                        } else {
+                            try {
+                                imports = imports + engine.importS57Bytes(payload.bytes)
+                            } catch (t: Throwable) {
+                                failures = failures + (entry.fileName + ": restore failed: " + (t.message ?: t.toString()))
+                            }
+                        }
+                        next(index + 1)
+                    },
+                    onFailure = {
+                        failures = failures + (entry.fileName + ": cache load failed: " + (it.message ?: it.toString()))
+                        next(index + 1)
+                    }
+                )
+            }
+        }
+        next(0)
+    }
+
+    fun restoreCache() {
+        chartCache.list { result ->
+            result.fold(
+                onSuccess = {
+                    updateCacheList(it)
+                    restoreCachedPayloads(it)
+                },
+                onFailure = { status?.textContent = "Cannot restore cache: " + (it.message ?: it.toString()) }
+            )
+        }
     }
 
     fun selectedInputFiles(): List<File> {
@@ -335,15 +448,33 @@ fun main() {
 
     reloadButton.onclick = {
         if (selectedFiles.isEmpty()) {
-            status?.textContent = "No selected browser files to reload. Choose .000 files again."
+            status?.textContent = "No selected browser files to reload. Choose .000 files again or restore browser cache."
         } else {
             importFiles(selectedFiles, selectedLabels)
         }
         null
     }
 
+    restoreCacheButton.onclick = {
+        restoreCache()
+        null
+    }
+
     clearButton.onclick = {
         clearAll()
+        null
+    }
+
+    clearCacheButton.onclick = {
+        chartCache.clear { result ->
+            result.fold(
+                onSuccess = {
+                    updateCacheList(emptyList())
+                    status?.textContent = "Browser cache cleared. Imported cells are unchanged."
+                },
+                onFailure = { status?.textContent = "Failed to clear browser cache: " + (it.message ?: it.toString()) }
+            )
+        }
         null
     }
 
@@ -353,5 +484,6 @@ fun main() {
     }
 
     updateCellSummary()
-    status?.textContent = "Phase 22 viewer ready. Import ENC files, select a cell, choose palette, and adjust scale/zoom."
+    refreshCacheList()
+    status?.textContent = "Phase 23 viewer ready. Import ENC files, restore browser cache, select a cell, choose palette, and adjust scale/zoom."
 }
