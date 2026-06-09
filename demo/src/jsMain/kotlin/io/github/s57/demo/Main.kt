@@ -74,7 +74,7 @@ fun main() {
             status?.textContent = "Cannot render " + label + ": cell has no bounds.\n" + importSummary()
             return
         }
-        val request = chartRenderRequestForCell(cell, canvas.width, canvas.height, 40000.0).copy(
+        val request = chartRenderRequestForCell(cell, canvas.width, canvas.height).copy(
             centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
             depthMesh = DepthMeshConfig(enabled = false),
             renderMode = ChartRenderMode.Flat2D
@@ -94,12 +94,16 @@ fun main() {
             adaptedFeatures = result.frame.adaptedFeatureCount,
             projectedFeatures = result.frame.projectedFeatures.size,
             visibleFeatures = result.diagnostics.visibleFeatureCount,
+            onscreenFeatures = result.diagnostics.onscreenFeatureCount,
+            offscreenFeatures = result.diagnostics.offscreenFeatureCount,
+            clippedFeatures = result.diagnostics.clippedFeatureCount,
             emptyGeometry = result.diagnostics.emptyGeometryCount,
             adapterDiagnostics = result.frame.adapterDiagnostics.size,
             s52 = summary.s52
         )
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
+            appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator)
             appendLine("Phase16 diagnostics:")
             appendLine(counters.toPlainText())
             appendLine("S-52 message: " + summary.message)
@@ -182,5 +186,5 @@ fun main() {
         null
     }
 
-    status?.textContent = "Phase 16C demo ready. Select an ENC .000 file to import, or render the built-in S-52 sample."
+    status?.textContent = "Phase 20 demo ready. Select an ENC .000 file to import; first render auto-fits the imported cell bounds."
 }
