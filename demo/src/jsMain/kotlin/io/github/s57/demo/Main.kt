@@ -16,9 +16,11 @@ import io.github.s57.render.ChartInteractionListener
 import io.github.s57.render.ChartRenderMode
 import io.github.s57.render.ChartUserEvent
 import io.github.s57.render.DepthMeshConfig
+import io.github.s57.render.Phase16Counters
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.chartRenderRequestForCell
+import io.github.s57.render.toPlainText
 import kotlinx.browser.document
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
@@ -93,12 +95,28 @@ fun main() {
         )
         val result = engine.render(request)
         val summary = renderer.renderS52Frame("chartCanvas", result.frame)
+        val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
+        val source = matchingImport?.sourceImport
+        val counters = Phase16Counters(
+            rawFeatures = source?.raw?.features?.size ?: 0,
+            rawVectors = source?.raw?.vectors?.size ?: 0,
+            decodedFeatures = source?.featureCount ?: matchingImport?.indexReport?.featureCount ?: cell.featureCount,
+            hasBounds = cell.bounds != null,
+            geometryDiagnostics = source?.geometryDiagnosticCount ?: 0,
+            indexedFeatures = matchingImport?.indexReport?.indexedFeatureCount ?: 0,
+            queriedFeatures = result.frame.queriedFeatureCount,
+            adaptedFeatures = result.frame.adaptedFeatureCount,
+            projectedFeatures = result.frame.projectedFeatures.size,
+            visibleFeatures = result.diagnostics.visibleFeatureCount,
+            emptyGeometry = result.diagnostics.emptyGeometryCount,
+            adapterDiagnostics = result.frame.adapterDiagnostics.size,
+            s52 = summary.s52
+        )
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
-            appendLine("S-52: " + summary.message)
-            appendLine("frame: queried=" + result.frame.queriedFeatureCount + " adapted=" + result.frame.adaptedFeatureCount + " projected=" + result.frame.projectedFeatures.size + " centerHits=" + summary.centerCrosshairHits.size)
-            appendLine("artifact: visible=" + result.diagnostics.visibleFeatureCount + " empty=" + result.diagnostics.emptyGeometryCount + " fallback=" + result.diagnostics.fallbackPlaceholderCount)
-            val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
+            appendLine("Phase16 diagnostics:")
+            appendLine(counters.toPlainText())
+            appendLine("S-52 message: " + summary.message)
             if (matchingImport != null) appendLine("index: " + matchingImport.indexReport.toPlainText())
             if (result.frame.adapterDiagnostics.isNotEmpty()) {
                 appendLine("adapterDiagnostics:")
@@ -188,7 +206,7 @@ fun main() {
         null
     }
 
-    status?.textContent = "Phase 12/13/14 demo ready. Select an ENC .000 file to import, or render the built-in S-52 sample."
+    status?.textContent = "Phase 16 demo ready. Select an ENC .000 file to import, or render the built-in S-52 sample."
 }
 
 private fun sampleDataset(): S57Dataset = S57Dataset(
