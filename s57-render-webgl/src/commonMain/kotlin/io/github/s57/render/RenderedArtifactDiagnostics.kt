@@ -3,15 +3,17 @@ package io.github.s57.render
 /**
  * Renderer-independent artifact diagnostics for CI and browser debug panels.
  *
- * Phase 8 deliberately checks the prepared StaticChartFrame before any browser
- * WebGL state is involved. This catches empty frames, missing geometry, missing
- * center-crosshair results, and depth-mesh plumbing regressions early.
+ * Phase 20 adds viewport-aware counters so an imported cell that renders fully
+ * offscreen can be diagnosed separately from empty geometry or adapter failure.
  */
 data class RenderedArtifactReport(
     val widthPx: Int,
     val heightPx: Int,
     val featureCount: Int,
     val visibleFeatureCount: Int,
+    val onscreenFeatureCount: Int,
+    val offscreenFeatureCount: Int,
+    val clippedFeatureCount: Int,
     val pointFeatureCount: Int,
     val lineFeatureCount: Int,
     val polygonFeatureCount: Int,
@@ -22,6 +24,7 @@ data class RenderedArtifactReport(
     val fallbackPlaceholderCount: Int = 0
 ) {
     val hasVisibleGeometry: Boolean get() = visibleFeatureCount > 0
+    val hasOnscreenGeometry: Boolean get() = onscreenFeatureCount > 0
     val hasDepthMesh: Boolean get() = depthMeshVertexCount > 0 && depthMeshTriangleCount > 0
 
     fun validateMinimum(
@@ -29,8 +32,8 @@ data class RenderedArtifactReport(
         maxFallbackPlaceholders: Int = 0
     ) {
         require(widthPx > 0 && heightPx > 0) { "Rendered artifact has invalid dimensions ${widthPx}x$heightPx" }
-        require(visibleFeatureCount >= minVisibleFeatures) {
-            "Rendered artifact has too few visible features: visible=$visibleFeatureCount required=$minVisibleFeatures total=$featureCount"
+        require(onscreenFeatureCount >= minVisibleFeatures) {
+            "Rendered artifact has too few onscreen features: onscreen=$onscreenFeatureCount offscreen=$offscreenFeatureCount clipped=$clippedFeatureCount required=$minVisibleFeatures total=$featureCount"
         }
         require(fallbackPlaceholderCount <= maxFallbackPlaceholders) {
             "Rendered artifact has too many fallback placeholders: fallback=$fallbackPlaceholderCount allowed=$maxFallbackPlaceholders"
@@ -38,10 +41,10 @@ data class RenderedArtifactReport(
     }
 
     fun toPlainText(): String =
-        "renderedArtifact ${widthPx}x$heightPx features=$featureCount visible=$visibleFeatureCount " +
-            "points=$pointFeatureCount lines=$lineFeatureCount polygons=$polygonFeatureCount empty=$emptyGeometryCount " +
-            "centerHits=$centerCrosshairHitCount depthVertices=$depthMeshVertexCount depthTriangles=$depthMeshTriangleCount " +
-            "fallback=$fallbackPlaceholderCount"
+        "renderedArtifact ${widthPx}x$heightPx features=$featureCount visible=$visibleFeatureCount onscreen=$onscreenFeatureCount " +
+            "offscreen=$offscreenFeatureCount clipped=$clippedFeatureCount points=$pointFeatureCount lines=$lineFeatureCount " +
+            "polygons=$polygonFeatureCount empty=$emptyGeometryCount centerHits=$centerCrosshairHitCount " +
+            "depthVertices=$depthMeshVertexCount depthTriangles=$depthMeshTriangleCount fallback=$fallbackPlaceholderCount"
 }
 
 fun analyzeRenderedArtifact(frame: StaticChartFrame): RenderedArtifactReport {
@@ -50,7 +53,10 @@ fun analyzeRenderedArtifact(frame: StaticChartFrame): RenderedArtifactReport {
         widthPx = frame.request.widthPx,
         heightPx = frame.request.heightPx,
         featureCount = frame.projectedFeatures.size,
-        visibleFeatureCount = geometries.count { it.points().isNotEmpty() },
+        visibleFeatureCount = frame.onscreenFeatureCount,
+        onscreenFeatureCount = frame.onscreenFeatureCount,
+        offscreenFeatureCount = frame.offscreenFeatureCount,
+        clippedFeatureCount = frame.clippedFeatureCount,
         pointFeatureCount = geometries.count { it is ProjectedGeometry.Point || it is ProjectedGeometry.MultiPoint },
         lineFeatureCount = geometries.count { it is ProjectedGeometry.LineString },
         polygonFeatureCount = geometries.count { it is ProjectedGeometry.Polygon || it is ProjectedGeometry.MultiPolygon },
