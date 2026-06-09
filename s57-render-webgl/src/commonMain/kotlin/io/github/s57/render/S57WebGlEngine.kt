@@ -24,21 +24,26 @@ class S57WebGlEngine(
     private val importPipeline: S57ImportPipeline = S57ImportPipeline()
 ) {
     fun importS57Bytes(bytes: ByteArray): S57EngineImportResult {
+        val decodeStart = monotonicNowMs()
         val imported = importPipeline.importBytes(bytes)
-        return importDataset(imported.dataset, imported)
+        val decodeMs = monotonicNowMs() - decodeStart
+        return importDataset(imported.dataset, imported, decodeMs)
     }
 
     fun importDataset(dataset: S57Dataset): S57EngineImportResult {
-        return importDataset(dataset, null)
+        return importDataset(dataset, null, decodeMs = 0.0)
     }
 
-    private fun importDataset(dataset: S57Dataset, sourceImport: S57ImportResult?): S57EngineImportResult {
+    private fun importDataset(dataset: S57Dataset, sourceImport: S57ImportResult?, decodeMs: Double): S57EngineImportResult {
+        val indexStart = monotonicNowMs()
         val report = indexStore.importDataset(dataset)
+        val indexMs = monotonicNowMs() - indexStart
         return S57EngineImportResult(
             cell = dataset.summary,
             indexReport = report,
             stats = indexStore.stats(),
-            sourceImport = sourceImport
+            sourceImport = sourceImport,
+            timing = EngineTimingReport(decodeMs = decodeMs, indexMs = indexMs)
         )
     }
 
@@ -49,9 +54,17 @@ class S57WebGlEngine(
     fun clear() = indexStore.clear()
 
     fun render(request: ChartRenderRequest): S57EngineRenderResult {
+        val frameStart = monotonicNowMs()
         val frame = staticRenderer.prepareFrame(request)
+        val frameMs = monotonicNowMs() - frameStart
+        val analyzeStart = monotonicNowMs()
         val diagnostics = analyzeRenderedArtifact(frame)
-        return S57EngineRenderResult(frame, diagnostics)
+        val analyzeMs = monotonicNowMs() - analyzeStart
+        return S57EngineRenderResult(
+            frame = frame,
+            diagnostics = diagnostics,
+            timing = EngineTimingReport(framePrepareMs = frameMs, artifactAnalyzeMs = analyzeMs)
+        )
     }
 
     fun centerCrosshairHits(request: ChartRenderRequest): List<ChartHitResult> {
@@ -67,17 +80,21 @@ data class S57EngineImportResult(
     val cell: S57CellSummary,
     val indexReport: S57IndexImportReport,
     val stats: S57IndexStats,
-    val sourceImport: S57ImportResult? = null
+    val sourceImport: S57ImportResult? = null,
+    val timing: EngineTimingReport = EngineTimingReport()
 ) {
     fun toPlainText(): String = buildString {
         append("engineImport cell=${cell.cellId} features=${indexReport.featureCount} indexed=${indexReport.indexedFeatureCount} cells=${stats.cellCount} totalFeatures=${stats.featureCount}")
         sourceImport?.let { append(" rawVectors=${it.raw.vectors.size} geometryDiagnostics=${it.geometryDiagnosticCount}") }
+        append(" ")
+        append(timing.toPlainText("importTiming"))
     }
 }
 
 data class S57EngineRenderResult(
     val frame: StaticChartFrame,
-    val diagnostics: RenderedArtifactReport
+    val diagnostics: RenderedArtifactReport,
+    val timing: EngineTimingReport = EngineTimingReport()
 ) {
     fun toSvgSnapshot(includeLabels: Boolean = false): String = renderedArtifactSvgSnapshot(frame, includeLabels)
     fun validateMinimum(minVisibleFeatures: Int = 1) = diagnostics.validateMinimum(minVisibleFeatures = minVisibleFeatures)
