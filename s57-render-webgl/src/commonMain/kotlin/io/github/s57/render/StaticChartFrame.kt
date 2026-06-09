@@ -26,7 +26,14 @@ data class ProjectedFeature(
     val geoBounds: GeoBounds?,
     val screenBounds: ScreenBounds?,
     val feature: S57Feature? = null
-)
+) {
+    val isOnscreen: Boolean get() = screenBounds?.intersects(ScreenBounds(0.0, 0.0, screenBoundsViewportWidth, screenBoundsViewportHeight)) ?: false
+
+    companion object {
+        internal var screenBoundsViewportWidth: Double = 0.0
+        internal var screenBoundsViewportHeight: Double = 0.0
+    }
+}
 
 data class ScreenBounds(
     val minX: Double,
@@ -37,6 +44,11 @@ data class ScreenBounds(
     fun intersects(point: ScreenPoint, radiusPx: Double): Boolean =
         point.x >= minX - radiusPx && point.x <= maxX + radiusPx && point.y >= minY - radiusPx && point.y <= maxY + radiusPx
 
+    fun intersects(other: ScreenBounds): Boolean =
+        minX <= other.maxX && maxX >= other.minX && minY <= other.maxY && maxY >= other.minY
+
+    fun isInside(widthPx: Int, heightPx: Int): Boolean =
+        minX >= 0.0 && minY >= 0.0 && maxX <= widthPx.toDouble() && maxY <= heightPx.toDouble()
 }
 
 fun screenBoundsFrom(points: List<ScreenPoint>): ScreenBounds? {
@@ -64,17 +76,25 @@ data class StaticChartFrame(
     val depthMesh: DepthMeshTile? = null
 ) {
     val featureCount: Int get() = projectedFeatures.size
+    val onscreenFeatureCount: Int get() = projectedFeatures.count { it.screenBounds?.intersects(viewportBounds()) == true }
+    val offscreenFeatureCount: Int get() = projectedFeatures.count { it.screenBounds != null && it.screenBounds.intersects(viewportBounds()).not() }
+    val clippedFeatureCount: Int get() = projectedFeatures.count { bounds ->
+        val screen = bounds.screenBounds
+        screen != null && screen.intersects(viewportBounds()) && !screen.isInside(request.widthPx, request.heightPx)
+    }
 
     fun summary(): RenderedFrameSummary = RenderedFrameSummary(
         widthPx = request.widthPx,
         heightPx = request.heightPx,
-        message = "Phase 7 static chart frame features=$featureCount queried=$queriedFeatureCount adapted=$adaptedFeatureCount mode=${request.renderMode}",
+        message = "Phase 20 static chart frame features=$featureCount queried=$queriedFeatureCount adapted=$adaptedFeatureCount onscreen=$onscreenFeatureCount offscreen=$offscreenFeatureCount clipped=$clippedFeatureCount mode=${request.renderMode}",
         camera = request.camera,
         centerCrosshairHits = centerCrosshairHits,
         depthMeshEnabled = depthMesh != null || request.depthMesh.enabled
     )
 
     fun hitTester(): ChartHitTester = StaticChartFrameHitTester(projectedFeatures)
+
+    fun viewportBounds(): ScreenBounds = ScreenBounds(0.0, 0.0, request.widthPx.toDouble(), request.heightPx.toDouble())
 }
 
 class StaticChartFrameHitTester(
