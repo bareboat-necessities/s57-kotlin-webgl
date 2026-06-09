@@ -1,5 +1,6 @@
 package io.github.s57.adapter
 
+import io.github.s57.core.GeoPoint
 import io.github.s57.core.S57Feature
 import io.github.s57.core.S57Geometry
 import io.github.s57.core.S57Value
@@ -25,7 +26,7 @@ class S57ToS52Adapter {
 
     fun adaptFeatures(features: List<S57Feature>): S57ToS52Result {
         val diagnostics = mutableListOf<S57ToS52Diagnostic>()
-        val portrayalFeatures = features.mapNotNull { feature -> feature.toPortrayalFeature(diagnostics) }
+        val portrayalFeatures = features.flatMap { feature -> feature.toPortrayalFeatures(diagnostics) }
         return S57ToS52Result(portrayalFeatures, diagnostics)
     }
 
@@ -40,23 +41,82 @@ class S57ToS52Adapter {
         }
     }
 
-    private fun S57Feature.toPortrayalFeature(diagnostics: MutableList<S57ToS52Diagnostic>): S57PortrayalFeature? {
-        val primitive = geometry.toPortrayalPrimitive()
+    private fun S57Feature.toPortrayalFeatures(diagnostics: MutableList<S57ToS52Diagnostic>): List<S57PortrayalFeature> {
+        val normalizedClass = objectClass.uppercase()
+        if (normalizedClass.startsWith("OBJL_")) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.UnsupportedObjectClass, S57ToS52DiagnosticSeverity.Warning, "Unsupported object class $normalizedClass")
+            return emptyList()
+        }
+        return when {
+            normalizedClass == "SOUNDG" && geometry is S57Geometry.MultiPoint -> splitSoundings(geometry.points, diagnostics)
+            geometry is S57Geometry.MultiPolygon -> splitMultiPolygon(geometry.polygons, diagnostics)
+            else -> listOfNotNull(toPortrayalFeature(id, geometry, attributes, diagnostics))
+        }
+    }
+
+    private fun S57Feature.splitMultiPolygon(
+        polygons: List<S57Geometry.Polygon>,
+        diagnostics: MutableList<S57ToS52Diagnostic>
+    ): List<S57PortrayalFeature> {
+        if (polygons.isEmpty()) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.Geometry, S57ToS52DiagnosticSeverity.Warning, "MultiPolygon is empty")
+            return emptyList()
+        }
+        diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.Geometry, S57ToS52DiagnosticSeverity.Info, "MultiPolygon split into ${polygons.size} portrayal feature(s)")
+        return polygons.mapIndexedNotNull { index, polygon ->
+            toPortrayalFeature(splitId(index), polygon, attributes, diagnostics)
+        }
+    }
+
+    private fun S57Feature.splitSoundings(
+        points: List<GeoPoint>,
+        diagnostics: MutableList<S57ToS52Diagnostic>
+    ): List<S57PortrayalFeature> {
+        if (points.isEmpty()) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.Geometry, S57ToS52DiagnosticSeverity.Warning, "SOUNDG multipoint is empty")
+            return emptyList()
+        }
+        val values = attributes["VALSOU"]?.splitListValues().orEmpty()
+        if (values.isNotEmpty() && values.size != points.size) {
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.Attribute, S57ToS52DiagnosticSeverity.Warning, "SOUNDG VALSOU count ${values.size} does not match point count ${points.size}")
+        }
+        return points.mapIndexedNotNull { index, point ->
+            val attrs = attributes.toMutableMap()
+            val perPoint = values.getOrNull(index) ?: values.firstOrNull() ?: attributes["VALSOU"]
+            if (perPoint != null) attrs["VALSOU"] = perPoint
+            toPortrayalFeature(splitId(index), S57Geometry.Point(point), attrs, diagnostics)
+        }
+    }
+
+    private fun S57Feature.toPortrayalFeature(
+        portrayalId: Long,
+        sourceGeometry: S57Geometry,
+        sourceAttributes: Map<String, S57Value>,
+        diagnostics: MutableList<S57ToS52Diagnostic>
+    ): S57PortrayalFeature? {
+        val primitive = sourceGeometry.toPortrayalPrimitive()
         if (primitive == null) {
-            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticSeverity.Warning, "Feature has no renderable geometry")
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.Geometry, S57ToS52DiagnosticSeverity.Warning, "Feature has no renderable geometry")
             return null
         }
-        val geometryModel = geometry.toPortrayalGeometry(id, diagnostics) ?: return null
+        val geometryModel = sourceGeometry.toPortrayalGeometry(id, diagnostics) ?: return null
+        val normalizedAttributes = sourceAttributes.mapKeys { (name, _) -> name.uppercase() }
+        normalizedAttributes.keys
+            .filter { it.startsWith("ATTL_") }
+            .forEach { attr -> diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.UnsupportedAttribute, S57ToS52DiagnosticSeverity.Warning, "Unsupported attribute $attr") }
         return S57PortrayalFeature(
-            id = id,
+            id = portrayalId,
+            sourceFeatureId = id,
             objectClassAcronym = objectClass.uppercase(),
             primitive = primitive,
-            attributes = attributes.mapValues { (_, value) -> value.toPortrayalValue() },
+            attributes = normalizedAttributes.mapValues { (name, value) -> value.toPortrayalValue(name) },
             geometry = geometryModel,
-            scaleMin = attributes["SCAMIN"]?.asIntOrNull(),
-            scaleMax = attributes["SCAMAX"]?.asIntOrNull()
+            scaleMin = normalizedAttributes["SCAMIN"]?.asIntOrNull(),
+            scaleMax = normalizedAttributes["SCAMAX"]?.asIntOrNull()
         )
     }
+
+    private fun S57Feature.splitId(index: Int): Long = id * 1000L + index.toLong() + 1L
 }
 
 private fun S57Geometry.toPortrayalPrimitive(): S57PortrayalPrimitive? = when (this) {
@@ -79,7 +139,7 @@ private fun S57Geometry.toPortrayalGeometry(
     is S57Geometry.Polygon -> {
         val outer = rings.firstOrNull().orEmpty()
         if (outer.size < 3) {
-            diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Warning, "Polygon has no valid outer ring")
+            diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticKind.Geometry, S57ToS52DiagnosticSeverity.Warning, "Polygon has no valid outer ring")
             null
         } else {
             S57PortrayalGeometry.Polygon(
@@ -88,24 +148,29 @@ private fun S57Geometry.toPortrayalGeometry(
             )
         }
     }
-    is S57Geometry.MultiPolygon -> {
-        val first = polygons.firstOrNull()
-        if (first == null) {
-            diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Warning, "MultiPolygon is empty")
-            null
-        } else {
-            diagnostics += S57ToS52Diagnostic(featureId, S57ToS52DiagnosticSeverity.Info, "MultiPolygon flattened to first polygon for the current portrayal bridge")
-            first.toPortrayalGeometry(featureId, diagnostics)
-        }
-    }
+    is S57Geometry.MultiPolygon -> null
 }
 
-private fun S57Value.toPortrayalValue(): S57PortrayalValue = when (this) {
+private fun S57Value.toPortrayalValue(attributeName: String? = null): S57PortrayalValue = when (this) {
     S57Value.Empty -> S57PortrayalValue.Empty()
-    is S57Value.Text -> S57PortrayalValue.Text(value)
+    is S57Value.Text -> value.textToPortrayalValue(attributeName)
     is S57Value.Integer -> S57PortrayalValue.Integer(value)
     is S57Value.Decimal -> S57PortrayalValue.Decimal(value)
-    is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalValue() })
+    is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalValue(attributeName) })
+}
+
+private fun String.textToPortrayalValue(attributeName: String?): S57PortrayalValue {
+    val trimmed = trim()
+    if (trimmed.isEmpty()) return S57PortrayalValue.Text(this)
+    if (attributeName in NUMERIC_DECIMAL_ATTRIBUTES) trimmed.toDoubleOrNull()?.let { return S57PortrayalValue.Decimal(it) }
+    if (attributeName in NUMERIC_INTEGER_ATTRIBUTES) trimmed.toIntOrNull()?.let { return S57PortrayalValue.Integer(it) }
+    return S57PortrayalValue.Text(this)
+}
+
+private fun S57Value.splitListValues(): List<S57Value> = when (this) {
+    is S57Value.ListValue -> values
+    is S57Value.Text -> value.split(',', ';', '|').mapNotNull { token -> token.trim().takeIf { it.isNotEmpty() }?.let(S57Value::Text) }
+    else -> listOf(this)
 }
 
 private fun S57Value.asIntOrNull(): Int? = when (this) {
@@ -115,6 +180,9 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
     is S57Value.ListValue -> values.firstOrNull()?.asIntOrNull()
     S57Value.Empty -> null
 }
+
+private val NUMERIC_DECIMAL_ATTRIBUTES = setOf("DRVAL1", "DRVAL2", "HEIGHT", "VALDCO", "VALSOU")
+private val NUMERIC_INTEGER_ATTRIBUTES = setOf("CATOBS", "CATLAM", "CATREA", "CATWRK", "COLOUR", "COLPAT", "LITCHR", "SCAMIN", "SCAMAX", "SIGGRP", "WATLEV")
 
 data class S52AdapterFeature(
     val id: Long,
@@ -128,10 +196,13 @@ data class S57ToS52Result(
     val diagnostics: List<S57ToS52Diagnostic>
 ) {
     val skippedCount: Int get() = diagnostics.count { it.severity == S57ToS52DiagnosticSeverity.Warning }
+    val unsupportedObjectClassCount: Int get() = diagnostics.count { it.kind == S57ToS52DiagnosticKind.UnsupportedObjectClass }
+    val unsupportedAttributeCount: Int get() = diagnostics.count { it.kind == S57ToS52DiagnosticKind.UnsupportedAttribute }
 }
 
 data class S57PortrayalFeature(
     val id: Long,
+    val sourceFeatureId: Long = id,
     val objectClassAcronym: String,
     val primitive: S57PortrayalPrimitive,
     val attributes: Map<String, S57PortrayalValue>,
@@ -171,9 +242,18 @@ sealed interface S57PortrayalValue {
 
 data class S57ToS52Diagnostic(
     val featureId: Long,
+    val kind: S57ToS52DiagnosticKind = S57ToS52DiagnosticKind.General,
     val severity: S57ToS52DiagnosticSeverity,
     val message: String
 )
+
+enum class S57ToS52DiagnosticKind {
+    General,
+    Geometry,
+    Attribute,
+    UnsupportedObjectClass,
+    UnsupportedAttribute
+}
 
 enum class S57ToS52DiagnosticSeverity {
     Info,
