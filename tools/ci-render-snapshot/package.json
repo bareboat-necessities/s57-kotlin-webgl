@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "name": "s57-phase26-ci-render-snapshot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "snapshot": "node render-snapshot.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}

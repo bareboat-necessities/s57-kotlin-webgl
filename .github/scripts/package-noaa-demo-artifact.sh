@@ -10,19 +10,26 @@ DATA_DIR="$APP_DIR/data"
 ZIP_PATH="build/noaa-statue-liberty-demo.zip"
 mkdir -p "$APP_DIR" build
 
-DIST_DIR="demo/build/dist/js/productionExecutable"
-if [[ ! -d "$DIST_DIR" ]]; then
-  DIST_DIR="$(find demo/build/dist -type f -name 'demo.js' -printf '%h\n' | head -1 || true)"
+JS_DIR="demo/build/dist/js/productionExecutable"
+if [[ ! -d "$JS_DIR" ]]; then
+  JS_DIR="demo/build/kotlin-webpack/js/productionExecutable"
 fi
-if [[ -z "${DIST_DIR:-}" || ! -d "$DIST_DIR" ]]; then
+if [[ ! -d "$JS_DIR" ]]; then
+  JS_DIR="$(find demo/build -type f -name 'demo.js' -printf '%h\n' | head -1 || true)"
+fi
+if [[ -z "${JS_DIR:-}" || ! -d "$JS_DIR" ]]; then
   echo "Could not locate Kotlin/JS browser distribution containing demo.js" >&2
   find demo/build -maxdepth 5 -type f | sort | head -80 >&2 || true
   exit 1
 fi
 
-rsync -a --delete "$DIST_DIR/" "$APP_DIR/"
-# rsync --delete mirrors the Kotlin/JS dist and removes directories that are not
-# in the dist, so create data/ only after that sync.
+RESOURCE_DIR="demo/build/processedResources/js/main"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR"
+if [[ -d "$RESOURCE_DIR" ]]; then
+  rsync -a "$RESOURCE_DIR/" "$APP_DIR/"
+fi
+rsync -a "$JS_DIR/" "$APP_DIR/"
 mkdir -p "$DATA_DIR"
 
 # Keep the artifact self-describing even when opened outside GitHub Actions.

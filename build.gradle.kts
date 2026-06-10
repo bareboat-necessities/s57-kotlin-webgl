@@ -194,3 +194,56 @@ registerAudit(
 )
 
 tasks.register("phase16BCheck") { dependsOn("phase11Check", "phase16BAudit", moduleBuilds) }
+
+registerAudit(
+    "phase26Audit",
+    "Phase 26",
+    listOf(
+        "docs/PHASE26_FULL_ENC_PORTRAYAL_AND_SNAPSHOTS.md",
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderPipelineDiagnostics.kt",
+        "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/RenderPipelineDiagnosticsTest.kt",
+        "demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt",
+        ".github/scripts/download-first-enc-cell.sh",
+        ".github/scripts/run-ci-enc-snapshot.sh",
+        "tools/ci-render-snapshot/render-snapshot.mjs",
+        "tools/ci-render-snapshot/package.json",
+        "config/phase26-snapshot-thresholds.json"
+    )
+) {
+    requireText("demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt", "s57Phase26ReportJson", "Demo must expose the Phase 26 diagnostics JSON hook.")
+    requireText("demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt", "Download canvas PNG", "Demo must expose a Phase 26 canvas PNG download.")
+    requireText(".github/workflows/ci.yml", "enc-render-snapshot", "CI must upload the Phase 26 ENC render snapshot bundle.")
+    requireText("tools/ci-render-snapshot/render-snapshot.mjs", "diagnostics.json", "Snapshot harness must write diagnostics JSON.")
+    requireText("tools/ci-render-snapshot/render-snapshot.mjs", "render.png", "Snapshot harness must write a canvas PNG.")
+}
+
+tasks.register("phase26DiagnosticsCheck") {
+    group = "verification"
+    description = "Runs Phase 26 structured diagnostics model and exporter tests."
+    dependsOn("phase26Audit", ":s57-render-webgl:jvmTest")
+}
+
+tasks.register("phase26GeometryCoverageCheck") {
+    group = "verification"
+    description = "Runs Phase 26 decode/index/adapt accounting coverage checks."
+    dependsOn("phase26DiagnosticsCheck", ":s57-core:jvmTest", ":s57-index:jvmTest", ":s57-s52-adapter:jvmTest")
+}
+
+tasks.register("phase26S52CoverageCheck") {
+    group = "verification"
+    description = "Runs Phase 26 S-52 portrayal, fallback, and color diagnostics checks."
+    dependsOn("phase26GeometryCoverageCheck", ":s57-render-webgl:jvmTest")
+}
+
+tasks.register("phase26BrowserSnapshotCheck") {
+    group = "verification"
+    description = "Checks that Phase 26 browser snapshot harness files and CI artifacts are wired. The external NOAA/Playwright harness runs in CI through .github/scripts/run-ci-enc-snapshot.sh."
+    dependsOn("phase26S52CoverageCheck", "phase26Audit", ":demo:jsBrowserProductionWebpack")
+}
+
+tasks.register("phase26Check") {
+    group = "verification"
+    description = "Runs Phase 26 diagnostics, coverage, S-52, and browser snapshot contract checks."
+    dependsOn("phase26BrowserSnapshotCheck")
+}
+

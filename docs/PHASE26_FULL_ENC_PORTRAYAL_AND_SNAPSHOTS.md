@@ -420,20 +420,41 @@ Definition of done:
   no AIS, NMEA, ownship, route planning, navigation alarms, route monitoring, or
   certified ECDIS/chartplotter workflow is added.
 
+## Current implementation status
+
+The first Phase 26 implementation slice is now wired end-to-end:
+
+- P26.1 structured diagnostics live in the render common source set with JSON
+  and plain-text exporters plus aggregation tests.
+- The demo keeps the latest diagnostics report, exposes
+  `window.s57Phase26ReportJson()` / `window.s57Phase26Report()`, and offers
+  diagnostics JSON plus canvas PNG downloads.
+- P26.5 adds a NOAA-first download script and Playwright snapshot harness that
+  produces `build/ci-enc-snapshot/render.png`, `diagnostics.json`, and
+  `summary.txt`.
+- P26.6 runs that harness in CI and uploads a single `enc-render-snapshot`
+  artifact beside the runnable NOAA demo ZIP.
+- Initial snapshot thresholds are checked in as warning-only limits so missing
+  symbols/colors/fallbacks stay visible without blocking stabilization work.
+
 ## Next implementation checkpoint
 
-The immediate next coding checkpoint should implement P26.1 and the smallest
-vertical slice of P26.4:
+The next coding checkpoint should deepen P26.2 and P26.3 coverage now that the
+report and snapshot contracts are available:
 
-1. Add the shared report model/exporters.
-2. Convert Phase 16/artifact diagnostics into the shared report.
-3. Store the latest report in the demo and expose a browser-test hook.
-4. Add a JSON download button before changing the S-52 bridge.
-5. Add unit tests for report aggregation and exporter stability.
+1. Preserve raw S-57 record identifiers through decoded, indexed, projected,
+   and adapted features.
+2. Emit per-feature structured diagnostics for unresolved spatial
+   relationships, suspicious topology, dropped attributes, unsupported
+   primitives, and empty geometries.
+3. Expand S-52 asset/color diagnostics from aggregate fallback counts into
+   asset-specific warnings with palette and RGB metadata.
+4. Add corpus fixtures that assert decode/index/adapt accounting never drops a
+   feature silently.
+5. Promote warning-only thresholds after the public-cell baselines stabilize.
 
-This sequence gives later geometry, symbology, and CI snapshot work one stable
-report contract to build on, and it lets missing-symbol/color work fail loudly as
-soon as those producers are wired in.
+This sequence builds on the stable Phase 26 report and CI artifact contract while
+keeping missing-symbol/color work visible in every build.
 
 ## Remaining open questions before implementation
 
