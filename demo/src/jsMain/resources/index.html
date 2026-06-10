@@ -14,7 +14,7 @@
     button { border: 1px solid #b8c3d6; border-radius: 8px; padding: 8px 10px; background: #f8fafc; cursor: pointer; font-weight: 600; }
     button:hover { background: #eef4ff; }
     .buttonRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    canvas { width: 100%; max-width: 1100px; height: 620px; background: #101923; border-radius: 12px; border: 1px solid #334; }
+    canvas { width: 100%; max-width: 1100px; height: 620px; background: #dceefa; border-radius: 12px; border: 1px solid #334; }
     pre { white-space: pre-wrap; font-size: 13px; line-height: 1.35; }
     .warning { color: #9a3412; font-weight: 600; }
     .events { white-space: pre-wrap; font-family: monospace; background: #f6f8fa; padding: 12px; border: 1px solid #ddd; }
@@ -71,5 +71,31 @@
     </section>
   </div>
   <script src="demo.js"></script>
+  <script>
+    (function () {
+      function scheduleAutoRender() {
+        var attempts = 0;
+        function tick() {
+          var status = document.getElementById('status');
+          var cellSelect = document.getElementById('cellSelect');
+          var renderButton = document.getElementById('renderButton');
+          var statusText = status && status.textContent ? status.textContent : '';
+          var hasImportedCell = cellSelect && cellSelect.options && cellSelect.options.length > 0 && cellSelect.value;
+          if (renderButton && hasImportedCell && /S-57 import: imported=[1-9]/.test(statusText)) {
+            renderButton.click();
+            return;
+          }
+          attempts += 1;
+          if (attempts < 160) window.setTimeout(tick, 250);
+        }
+        window.setTimeout(tick, 250);
+      }
+
+      window.addEventListener('load', function () {
+        var fileInput = document.getElementById('fileInput');
+        if (fileInput) fileInput.addEventListener('change', scheduleAutoRender);
+      });
+    })();
+  </script>
 </body>
 </html>
