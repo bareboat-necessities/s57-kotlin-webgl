@@ -71,28 +71,139 @@ class BrowserS57WebGlRenderer(
         gl.clear(WebGLRenderingContext.COLOR_BUFFER_BIT)
         val program = createSimpleColorProgram(gl) ?: return frame.summary().copy(message = "WebGL shader setup failed")
         program.use()
+        val counts = drawDecodedGeometry(program, canvas, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)
+        if (frame.request.centerCrosshair.enabled) drawCrosshair(program, canvas, frame.request.centerCrosshair.sizePx)
+        return frame.summary().copy(
+            message = "Phase 7 static WebGL frame rendered features=${frame.featureCount} " + counts.toMessage()
+        )
+    }
+
+    fun renderGeometryOverlay(
+        canvasId: String,
+        frame: StaticChartFrame,
+        includePointGlyphs: Boolean = true,
+        includeSoundingPointGlyphs: Boolean = false
+    ): RenderedFrameSummary {
+        val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
+            ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
+        val rawGl = canvas.getContext("webgl") ?: canvas.getContext("webgl2")
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", frame.request.camera)
+        val gl = rawGl.unsafeCast<WebGLRenderingContext>()
+
+        gl.viewport(0, 0, canvas.width, canvas.height)
+        val program = createSimpleColorProgram(gl) ?: return frame.summary().copy(message = "WebGL geometry overlay shader setup failed")
+        program.use()
+        val counts = drawDecodedGeometry(program, canvas, frame, includePointGlyphs, includeSoundingPointGlyphs)
+        return frame.summary().copy(message = "decoded geometry overlay rendered " + counts.toMessage())
+    }
+
+    private fun drawDecodedGeometry(
+        program: BrowserSimpleColorProgram,
+        canvas: HTMLCanvasElement,
+        frame: StaticChartFrame,
+        includePointGlyphs: Boolean,
+        includeSoundingPointGlyphs: Boolean
+    ): GeometryDrawCounts {
+        val counts = GeometryDrawCounts()
         for (feature in frame.projectedFeatures) {
             when (val geometry = feature.geometry) {
                 is ProjectedGeometry.Empty -> Unit
-                is ProjectedGeometry.Point -> program.drawPoints(listOf(geometry.point), canvas, colorFor(feature.objectClass))
-                is ProjectedGeometry.MultiPoint -> program.drawPoints(geometry.points, canvas, colorFor(feature.objectClass))
-                is ProjectedGeometry.LineString -> program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass))
-                is ProjectedGeometry.Polygon -> {
-                    geometry.rings.firstOrNull()?.let { ring ->
-                        program.drawTriangleFan(ring, canvas, fillColorFor(feature.objectClass))
-                        program.drawLineStrip(ring, canvas, colorFor(feature.objectClass))
+                is ProjectedGeometry.Point -> {
+                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                        drawPointGlyph(program, geometry.point, canvas, feature.objectClass, colorFor(feature.objectClass))
+                        counts.points++
                     }
                 }
-                is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { polygon ->
-                    polygon.rings.firstOrNull()?.let { ring ->
-                        program.drawTriangleFan(ring, canvas, fillColorFor(feature.objectClass))
-                        program.drawLineStrip(ring, canvas, colorFor(feature.objectClass))
+                is ProjectedGeometry.MultiPoint -> {
+                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                        geometry.points.forEach { point -> drawPointGlyph(program, point, canvas, feature.objectClass, colorFor(feature.objectClass)) }
+                        counts.points += geometry.points.size
                     }
+                }
+                is ProjectedGeometry.LineString -> {
+                    if (geometry.points.size >= 2) {
+                        program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass))
+                        counts.lines++
+                    }
+                }
+                is ProjectedGeometry.Polygon -> {
+                    if (drawPolygon(program, canvas, geometry, feature.objectClass)) counts.areas++
+                }
+                is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { polygon ->
+                    if (drawPolygon(program, canvas, polygon, feature.objectClass)) counts.areas++
                 }
             }
         }
-        if (frame.request.centerCrosshair.enabled) drawCrosshair(program, canvas, frame.request.centerCrosshair.sizePx)
-        return frame.summary().copy(message = "Phase 7 static WebGL frame rendered features=${frame.featureCount}")
+        return counts
+    }
+
+    private fun drawPolygon(
+        program: BrowserSimpleColorProgram,
+        canvas: HTMLCanvasElement,
+        polygon: ProjectedGeometry.Polygon,
+        objectClass: String
+    ): Boolean {
+        val outer = polygon.rings.firstOrNull().orEmpty()
+        if (outer.size < 3) return false
+        program.drawTriangleFan(outer, canvas, fillColorFor(objectClass))
+        polygon.rings.forEach { ring ->
+            if (ring.size >= 2) program.drawLineStrip(ring.closedForStroke(), canvas, colorFor(objectClass))
+        }
+        return true
+    }
+
+    private fun List<ScreenPoint>.closedForStroke(): List<ScreenPoint> =
+        if (size >= 2 && first() != last()) this + first() else this
+
+    private fun drawPointGlyph(
+        program: BrowserSimpleColorProgram,
+        point: ScreenPoint,
+        canvas: HTMLCanvasElement,
+        objectClass: String,
+        color: FloatArray
+    ) {
+        val size = if (objectClass.uppercase() == "SOUNDG") 3.0 else 5.5
+        when (objectClass.uppercase()) {
+            "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB" -> {
+                program.drawLineStrip(
+                    listOf(
+                        ScreenPoint(point.x, point.y - size),
+                        ScreenPoint(point.x + size, point.y),
+                        ScreenPoint(point.x, point.y + size),
+                        ScreenPoint(point.x - size, point.y),
+                        ScreenPoint(point.x, point.y - size)
+                    ),
+                    canvas,
+                    color
+                )
+            }
+            "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD" -> {
+                program.drawLineStrip(
+                    listOf(
+                        ScreenPoint(point.x, point.y - size),
+                        ScreenPoint(point.x + size, point.y + size),
+                        ScreenPoint(point.x - size, point.y + size),
+                        ScreenPoint(point.x, point.y - size)
+                    ),
+                    canvas,
+                    color
+                )
+            }
+            "LIGHTS" -> {
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color)
+                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y - size * 0.7), ScreenPoint(point.x + size * 0.7, point.y + size * 0.7)), canvas, color)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y + size * 0.7), ScreenPoint(point.x + size * 0.7, point.y - size * 0.7)), canvas, color)
+            }
+            "WRECKS", "OBSTRN" -> {
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y - size), ScreenPoint(point.x + size, point.y + size)), canvas, color)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y + size), ScreenPoint(point.x + size, point.y - size)), canvas, color)
+            }
+            else -> {
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color)
+                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color)
+            }
+        }
     }
 
     private fun drawCrosshair(program: BrowserSimpleColorProgram, canvas: HTMLCanvasElement, size: Double) {
@@ -115,6 +226,14 @@ class BrowserS57WebGlRenderer(
         "DEPARE" -> floatArrayOf(0.70f, 0.88f, 0.96f, 0.65f)
         else -> floatArrayOf(0.78f, 0.86f, 0.80f, 0.45f)
     }
+}
+
+private class GeometryDrawCounts(
+    var points: Int = 0,
+    var lines: Int = 0,
+    var areas: Int = 0
+) {
+    fun toMessage(): String = "points=$points lines=$lines areas=$areas"
 }
 
 private class BrowserSimpleColorProgram(

@@ -56,13 +56,18 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         east = frame.request.bounds.maxLon,
         north = frame.request.bounds.maxLat
     )
+    val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
 
     return try {
         var renderer: WebGlS52Renderer? = null
         renderer = WebGlS52Renderer(canvas, bridge.presLib) {
             val readyRenderer = renderer ?: return@WebGlS52Renderer
             try {
-                readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
+                val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
+                val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
+                if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
+                    renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = false)
+                }
             } catch (_: Throwable) {
                 // The initial render path already reports errors. Resource-ready
                 // callbacks must never break the browser event loop.
@@ -80,7 +85,6 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " areas=" + (stats.areaFillCount + stats.areaPatternCount) +
             " text=" + (stats.textCount + stats.soundingCount) +
             " diagnostics=" + portrayed.diagnostics.size
-        val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
         val renderedLinearOrAreaDrawCount = stats.lineCount + stats.areaFillCount + stats.areaPatternCount
         val missingLinearOrAreaOutput = linearOrAreaFeatureCount > 0 && renderedLinearOrAreaDrawCount <= 0
         if (s52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount) || missingLinearOrAreaOutput) {
@@ -96,7 +100,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 s52 = s52.copy(failureStage = stage)
             )
         } else {
-            frame.summary().copy(message = message, s52 = s52)
+            if (s52.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
+                val overlay = renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = false)
+                frame.summary().copy(message = message + "; " + overlay.message, s52 = s52)
+            } else {
+                frame.summary().copy(message = message, s52 = s52)
+            }
         }
     } catch (t: Throwable) {
         val s52 = portrayed.toSummary(failureStage = "webgl-render")

@@ -27,5 +27,22 @@ fun S52RenderSummary.hasOnlyPointLikeCommands(): Boolean {
     return symbolCommandCount + textCommandCount + soundingCommandCount >= commandCount
 }
 
+/**
+ * Even when S-52 reports successful draw calls, the bundled/development S-52
+ * WebGL path can visually degrade to marker dots if symbol/line resources are
+ * incomplete or if the renderer counts commands before real path geometry is
+ * emitted. Keep decoded ENC geometry visible as a browser overlay whenever real
+ * chart features exist.
+ */
+fun S52RenderSummary.shouldOverlayDecodedGeometry(
+    projectedSourceFeatureCount: Int,
+    projectedLinearOrAreaFeatureCount: Int
+): Boolean {
+    if (projectedSourceFeatureCount <= 0) return false
+    if (failureStage != "none") return false
+    if (drawCallCount <= 0) return false
+    return projectedLinearOrAreaFeatureCount > 0 || symbolCommandCount > 0 || soundingCommandCount > 0
+}
+
 fun s52FallbackMessage(reason: String, fallbackMessage: String): String =
     reason + "; fallback geometry render: " + fallbackMessage

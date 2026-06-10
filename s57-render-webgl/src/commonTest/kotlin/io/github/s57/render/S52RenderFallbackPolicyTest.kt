@@ -80,4 +80,26 @@ class S52RenderFallbackPolicyTest {
         assertFalse(s52.needsGeometryFallback(projectedSourceFeatureCount = 4, projectedLinearOrAreaFeatureCount = 0))
     }
 
+    @Test
+    fun overlaysDecodedGeometryWhenS52ReportsDrawCallsButMayStillLookLikeDots() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 10,
+            commandCount = 10,
+            drawCallCount = 10,
+            lineCommandCount = 2,
+            symbolCommandCount = 8,
+            failureStage = "none"
+        )
+
+        assertTrue(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))
+    }
+
+    @Test
+    fun doesNotOverlayDecodedGeometryAfterFailedS52BecauseFallbackOwnsTheCanvas() {
+        val s52 = S52RenderSummary(commandCount = 0, drawCallCount = 0, failureStage = "portrayal")
+
+        assertFalse(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))
+    }
+
 }

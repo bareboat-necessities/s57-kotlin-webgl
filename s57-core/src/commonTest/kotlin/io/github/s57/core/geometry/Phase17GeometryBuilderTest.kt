@@ -119,6 +119,56 @@ class Phase17GeometryBuilderTest {
         assertTrue(result.diagnostics.any { "Corrected primitive Point to Line" in it.message })
     }
 
+
+    @Test
+    fun infersAreaAndLineFromObjectClassWhenPrimitiveWasDecodedAsPoint() {
+        val raw = S57RawDataset(
+            metadata = S57DatasetMetadata(cellName = "US5OBJ", coordinateMultiplier = 10_000_000),
+            vectors = listOf(
+                node(1, -74.0, 40.0),
+                node(2, -73.9, 40.0),
+                node(3, -73.9, 40.1),
+                node(4, -74.0, 40.1)
+            ),
+            features = listOf(
+                S57RawFeatureRecord(
+                    id = 400,
+                    recordName = S57RecordName(100, 400),
+                    primitive = S57Primitive.Point,
+                    group = 1,
+                    objectClassCode = 42,
+                    objectClassAcronym = "DEPARE",
+                    version = 1,
+                    updateInstruction = S57UpdateInstruction.Insert,
+                    spatialReferences = listOf(1L, 2L, 3L, 4L).map { id ->
+                        S57SpatialReference(S57RecordName(120, id), orientation = 1, usage = 1, mask = 255)
+                    }
+                ),
+                S57RawFeatureRecord(
+                    id = 401,
+                    recordName = S57RecordName(100, 401),
+                    primitive = S57Primitive.Point,
+                    group = 1,
+                    objectClassCode = 43,
+                    objectClassAcronym = "DEPCNT",
+                    version = 1,
+                    updateInstruction = S57UpdateInstruction.Insert,
+                    spatialReferences = listOf(1L, 2L).map { id ->
+                        S57SpatialReference(S57RecordName(120, id), orientation = 1, usage = 1, mask = 255)
+                    }
+                )
+            ),
+            unknownRecords = emptyList()
+        )
+
+        val result = S57GeometryBuilder().build(raw)
+
+        assertTrue(result.features[0].geometry is S57Geometry.Polygon)
+        assertTrue(result.features[1].geometry is S57Geometry.LineString)
+        assertTrue(result.diagnostics.any { "from object class DEPARE" in it.message })
+        assertTrue(result.diagnostics.any { "from object class DEPCNT" in it.message })
+    }
+
     private fun rawPoint(lon: Double, lat: Double, zRaw: Long? = null): S57RawCoordinate = S57RawCoordinate(
         yRaw = (lat * 10_000_000).toLong(),
         xRaw = (lon * 10_000_000).toLong(),

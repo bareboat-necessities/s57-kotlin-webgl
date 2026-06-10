@@ -95,22 +95,42 @@ class S57GeometryBuilder(
         diagnostics: MutableList<S57GeometryDiagnostic>
     ): S57Primitive {
         val hasEdgeReference = referenced.any { (_, vector) -> vector.recordName.recordName == EDGE_RECORD_NAME }
-        if (!hasEdgeReference) return primitive
-
         val shouldInfer = primitive == S57Primitive.Point || primitive == S57Primitive.Unknown || primitive == S57Primitive.None
         if (!shouldInfer) return primitive
 
-        val inferred = if (objectClassAcronym in EDGE_AREA_OBJECT_CLASSES || referenced.formsClosedEdgeChain(context)) {
-            S57Primitive.Area
-        } else {
-            S57Primitive.Line
+        val objectClassInferred = objectClassPrimitiveOverride(referenced, context)
+        if (objectClassInferred != null) {
+            diagnostics += S57GeometryDiagnostic(
+                id,
+                S57GeometryDiagnosticSeverity.Warning,
+                "Corrected primitive ${primitive.name} to ${objectClassInferred.name} from object class $objectClassAcronym and referenced geometry"
+            )
+            return objectClassInferred
         }
+
+        if (!hasEdgeReference) return primitive
+
+        val inferred = if (referenced.formsClosedEdgeChain(context)) S57Primitive.Area else S57Primitive.Line
         diagnostics += S57GeometryDiagnostic(
             id,
             S57GeometryDiagnosticSeverity.Warning,
             "Corrected primitive ${primitive.name} to ${inferred.name} because feature references edge vector(s)"
         )
         return inferred
+    }
+
+    private fun S57RawFeatureRecord.objectClassPrimitiveOverride(
+        referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>,
+        context: BuildContext
+    ): S57Primitive? {
+        val normalized = objectClassAcronym.uppercase()
+        var pointCount = 0
+        referenced.forEach { (ref, vector) -> pointCount += vector.segmentPoints(context).oriented(ref.orientation).size }
+        return when {
+            normalized in AREA_OBJECT_CLASSES && pointCount >= 3 -> S57Primitive.Area
+            normalized in LINE_OBJECT_CLASSES && pointCount >= 2 -> S57Primitive.Line
+            else -> null
+        }
     }
 
     private fun List<Pair<S57SpatialReference, S57RawVectorRecord>>.formsClosedEdgeChain(context: BuildContext): Boolean {
@@ -140,6 +160,14 @@ class S57GeometryBuilder(
         context: BuildContext,
         diagnostics: MutableList<S57GeometryDiagnostic>
     ): S57Geometry {
+        val hasEdgeReference = referenced.any { (_, vector) -> vector.recordName.recordName == EDGE_RECORD_NAME }
+        if (!hasEdgeReference) {
+            val ring = referenced.flatMap { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }
+                .dedupeAdjacent()
+                .closedRingOrNull()
+            if (ring != null) return S57Geometry.Polygon(listOf(ring))
+        }
+
         val segments = referenced.map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }
         val rings = stitchSegments(segments, closeRing = true).filter { it.size >= 4 && it.first() == it.last() }
         if (rings.isEmpty()) {
@@ -216,6 +244,18 @@ class S57GeometryBuilder(
         return out
     }
 
+    private fun List<GeoPoint>.dedupeAdjacent(): List<GeoPoint> {
+        val out = mutableListOf<GeoPoint>()
+        forEach { point -> if (out.lastOrNull() != point) out += point }
+        return out
+    }
+
+    private fun List<GeoPoint>.closedRingOrNull(): List<GeoPoint>? {
+        if (size < 3) return null
+        val closed = if (first() == last()) this else this + first()
+        return if (closed.size >= 4) closed else null
+    }
+
     private fun List<GeoPoint>.oriented(orientation: Int): List<GeoPoint> =
         if (orientation == ORIENTATION_REVERSE) asReversed() else this
 
@@ -263,13 +303,20 @@ class S57GeometryBuilder(
         const val ORIENTATION_REVERSE: Int = 2
         private const val EDGE_RECORD_NAME: Int = 130
 
-        private val EDGE_AREA_OBJECT_CLASSES: Set<String> = setOf(
+        private val AREA_OBJECT_CLASSES: Set<String> = setOf(
             "ACHARE", "ADMARE", "AIRARE", "CBLARE", "CONZNE", "COSARE", "CTNARE",
             "DEPARE", "DMPGRD", "DOCARE", "DRGARE", "DWRTCL", "EXEZNE", "FAIRWY",
             "FSHGRD", "FSHZNE", "HRBARE", "ICNARE", "ISTZNE", "LAKARE", "LNDARE",
-            "MIPARE", "OSPARE", "PIPARE", "PRCARE", "PRDARE", "RESARE", "SBDARE",
+            "MIPARE", "M_COVR", "M_NPUB", "M_NSYS", "M_QUAL", "M_SDAT", "M_SREL",
+            "M_UNIT", "OSPARE", "PIPARE", "PRCARE", "PRDARE", "RESARE", "SBDARE",
             "SEAARE", "SPLARE", "TESARE", "TSEZNE", "TSSCRS", "TSSRON", "TSSLPT",
             "TSSBND", "UNSARE"
+        )
+
+        private val LINE_OBJECT_CLASSES: Set<String> = setOf(
+            "CBLOHD", "CBLSUB", "COALNE", "CONVYR", "DAMCON", "DEPCNT", "DYKCON",
+            "FERYRT", "MORFAC", "PIPOHD", "PIPSOL", "RADRNG", "RAILWY", "RIVERS",
+            "ROADWY", "SLCONS", "TSELNE", "TSSBND", "TSSLPT"
         )
     }
 }
