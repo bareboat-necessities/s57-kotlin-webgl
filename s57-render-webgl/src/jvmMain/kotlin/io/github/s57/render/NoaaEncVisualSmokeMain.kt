@@ -34,7 +34,28 @@ fun main(args: Array<String>) {
     collector.addTiming("render", rendered.timing)
     val smoke = noaaEncVisualSmokeReport(imported, rendered)
 
+    val sourceImport = imported.sourceImport
+    val pipelineDiagnostics = Phase16Counters(
+        rawFeatures = sourceImport?.raw?.features?.size ?: 0,
+        rawVectors = sourceImport?.raw?.vectors?.size ?: 0,
+        decodedFeatures = sourceImport?.featureCount ?: imported.indexReport.featureCount,
+        hasBounds = imported.cell.bounds != null,
+        geometryDiagnostics = sourceImport?.geometryDiagnosticCount ?: 0,
+        indexedFeatures = imported.indexReport.indexedFeatureCount,
+        queriedFeatures = rendered.frame.queriedFeatureCount,
+        adaptedFeatures = rendered.frame.adaptedFeatureCount,
+        projectedFeatures = rendered.frame.projectedFeatures.size,
+        visibleFeatures = rendered.diagnostics.visibleFeatureCount,
+        onscreenFeatures = rendered.diagnostics.onscreenFeatureCount,
+        offscreenFeatures = rendered.diagnostics.offscreenFeatureCount,
+        clippedFeatures = rendered.diagnostics.clippedFeatureCount,
+        emptyGeometry = rendered.diagnostics.emptyGeometryCount,
+        adapterDiagnostics = rendered.frame.adapterDiagnostics.size
+    ).toRenderPipelineDiagnostics(imported.cell.cellId)
+        .plus(rendered.diagnostics.toRenderPipelineDiagnostics(imported.cell.cellId))
+
     println(smoke.toPlainText())
+    if (pipelineDiagnostics.diagnostics.isNotEmpty()) println(pipelineDiagnostics.toPlainText())
     println(performanceFrameReport(rendered).toPlainText())
     println(collector.toPlainText())
 
