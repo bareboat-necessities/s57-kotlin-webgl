@@ -126,7 +126,7 @@ class BrowserS57WebGlRenderer(
         program.use()
         for (feature in frame.projectedFeatures) {
             when (val geometry = feature.geometry) {
-                ProjectedGeometry.Empty -> Unit
+                is ProjectedGeometry.Empty -> Unit
                 is ProjectedGeometry.Point -> program.drawPoints(listOf(geometry.point), canvas, colorFor(feature.objectClass))
                 is ProjectedGeometry.MultiPoint -> program.drawPoints(geometry.points, canvas, colorFor(feature.objectClass))
                 is ProjectedGeometry.LineString -> program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass))
@@ -196,11 +196,13 @@ private class BrowserSimpleColorProgram(
 
     private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
         if (points.isEmpty()) return
-        val data = Float32Array(points.size * 2)
+        val dataValues = Array(points.size * 2) { 0.0f }
         points.forEachIndexed { index, point ->
-            data[index * 2] = ((point.x / canvas.width.toDouble()) * 2.0 - 1.0).toFloat()
-            data[index * 2 + 1] = (1.0 - (point.y / canvas.height.toDouble()) * 2.0).toFloat()
+            dataValues[index * 2] = ((point.x / canvas.width.toDouble()) * 2.0 - 1.0).toFloat()
+            dataValues[index * 2 + 1] = (1.0 - (point.y / canvas.height.toDouble()) * 2.0).toFloat()
         }
+        val data = Float32Array(dataValues.size)
+        data.set(dataValues)
         gl.bufferData(WebGLRenderingContext.ARRAY_BUFFER, data, WebGLRenderingContext.STREAM_DRAW)
         gl.uniform4f(colorLocation, color[0], color[1], color[2], color[3])
         gl.drawArrays(mode, 0, points.size)
