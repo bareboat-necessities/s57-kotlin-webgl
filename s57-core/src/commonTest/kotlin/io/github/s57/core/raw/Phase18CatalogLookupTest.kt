@@ -38,21 +38,21 @@ class Phase18CatalogLookupTest {
     @Test
     fun resolvesCommonPortrayalAttributesToAcronyms() {
         val expected = mapOf(
-            34 to "CATOBS",
-            37 to "CATLAM",
+            42 to "CATOBS",
+            36 to "CATLAM",
             56 to "CATREA",
             71 to "CATWRK",
             75 to "COLOUR",
             76 to "COLPAT",
             87 to "DRVAL1",
             88 to "DRVAL2",
-            98 to "HEIGHT",
+            95 to "HEIGHT",
             102 to "INFORM",
             107 to "LITCHR",
             116 to "OBJNAM",
             141 to "SIGGRP",
             142 to "SIGPER",
-            156 to "TXTDSC",
+            158 to "TXTDSC",
             174 to "VALDCO",
             179 to "VALSOU",
             187 to "WATLEV"
