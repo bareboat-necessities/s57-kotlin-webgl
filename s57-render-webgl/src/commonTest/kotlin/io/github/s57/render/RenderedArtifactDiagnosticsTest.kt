@@ -40,6 +40,45 @@ class RenderedArtifactDiagnosticsTest {
         assertFailsWith<IllegalArgumentException> { report.validateMinimum() }
     }
 
+
+    @Test
+    fun sortsSnapshotGeometryIntoReadableChartPaintOrder() {
+        val request = sampleRequest()
+        val buoy = ProjectedFeature(
+            featureId = 1,
+            objectClass = "BOYLAT",
+            geometry = ProjectedGeometry.Point(ScreenPoint(100.0, 100.0)),
+            geoBounds = null,
+            screenBounds = ScreenBounds(100.0, 100.0, 100.0, 100.0)
+        )
+        val land = ProjectedFeature(
+            featureId = 2,
+            objectClass = "LNDARE",
+            geometry = ProjectedGeometry.Polygon(listOf(listOf(ScreenPoint(0.0, 0.0), ScreenPoint(100.0, 0.0), ScreenPoint(100.0, 100.0), ScreenPoint(0.0, 0.0)))),
+            geoBounds = null,
+            screenBounds = ScreenBounds(0.0, 0.0, 100.0, 100.0)
+        )
+        val coastline = ProjectedFeature(
+            featureId = 3,
+            objectClass = "COALNE",
+            geometry = ProjectedGeometry.LineString(listOf(ScreenPoint(0.0, 10.0), ScreenPoint(100.0, 10.0))),
+            geoBounds = null,
+            screenBounds = ScreenBounds(0.0, 10.0, 100.0, 10.0)
+        )
+        val frame = StaticChartFrame(
+            request = request,
+            queriedFeatureCount = 3,
+            adaptedFeatureCount = 3,
+            projectedFeatures = listOf(buoy, coastline, land)
+        )
+
+        val svg = renderedArtifactSvgSnapshot(frame)
+
+        assertTrue(svg.indexOf("<polygon") < svg.indexOf("<polyline"))
+        assertTrue(svg.indexOf("<polyline") < svg.indexOf("<circle"))
+        assertEquals(listOf("LNDARE", "COALNE", "BOYLAT"), frame.projectedFeatures.sortedForChartReadability().map { it.objectClass })
+    }
+
     private fun sampleFrame(): StaticChartFrame {
         val request = sampleRequest()
         val polygon = ProjectedFeature(

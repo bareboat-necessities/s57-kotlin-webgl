@@ -59,6 +59,48 @@ fun screenBoundsFrom(points: List<ScreenPoint>): ScreenBounds? {
     return ScreenBounds(minX, minY, maxX, maxY)
 }
 
+
+/**
+ * Stable, chart-like paint order for decoded geometry fallbacks and snapshots.
+ *
+ * Raw ENC feature order is optimized for interchange, not visual legibility. If
+ * we paint features in decode order, late area objects can cover contours,
+ * soundings, and aids-to-navigation, producing snapshots that look like random
+ * blobs instead of a readable chart. This ordering keeps broad fills below line
+ * work and point symbols, with land/coast detail above sea/depth fills.
+ */
+fun List<ProjectedFeature>.sortedForChartReadability(): List<ProjectedFeature> = sortedWith(
+    compareBy<ProjectedFeature> { it.chartReadabilityLayer() }
+        .thenBy { it.featureId }
+        .thenBy { it.objectClass }
+)
+
+private fun ProjectedFeature.chartReadabilityLayer(): Int {
+    val objectClass = objectClass.uppercase()
+    val geometryLayer = when (geometry) {
+        is ProjectedGeometry.Polygon,
+        is ProjectedGeometry.MultiPolygon -> 100
+        is ProjectedGeometry.LineString -> 300
+        is ProjectedGeometry.Point,
+        is ProjectedGeometry.MultiPoint -> 500
+        is ProjectedGeometry.Empty -> 900
+    }
+    val classOffset = when (objectClass) {
+        "DEPARE", "DRGARE", "UNSARE", "SEAARE" -> 0
+        "LNDARE" -> 60
+        "LAKARE", "RIVERS" -> 70
+        "FAIRWY", "ACHARE", "RESARE", "RECTRC", "TSSBND", "TSSLPT" -> 90
+        "SLCONS", "PONTON", "DOCARE" -> 110
+        "DEPCNT", "DRVAL1", "DRVAL2" -> 0
+        "COALNE", "SLOTOP" -> 30
+        "CBLARE", "CBLOHD", "CBLSUB", "PIPARE", "PIPOHD", "PIPSOL" -> 45
+        "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB",
+        "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD", "LIGHTS" -> 80
+        else -> 50
+    }
+    return geometryLayer + classOffset
+}
+
 data class StaticChartFrame(
     val request: ChartRenderRequest,
     val queriedFeatureCount: Int,
