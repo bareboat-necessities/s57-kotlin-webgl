@@ -15,6 +15,7 @@ import io.github.s57.render.ChartRenderMode
 import io.github.s57.render.ChartUserEvent
 import io.github.s57.render.DepthMeshConfig
 import io.github.s57.render.Phase16Counters
+import io.github.s57.render.RenderSnapshotDiagnosticExport
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
@@ -22,12 +23,14 @@ import io.github.s57.render.browserChartCacheSummary
 import io.github.s57.render.chartRenderRequestForCell
 import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
+import io.github.s57.render.pipelineDiagnosticReport
 import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
 import io.github.s57.render.toS57ByteArray
 import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
 import kotlinx.browser.window
+import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
@@ -36,6 +39,8 @@ import org.w3c.dom.HTMLSelectElement
 import org.khronos.webgl.ArrayBuffer
 import org.w3c.files.File
 import kotlin.math.roundToInt
+
+private fun encodeURIComponent(value: String): String = js("encodeURIComponent(value)") as String
 
 fun main() {
     val fileInput = document.getElementById("fileInput") as HTMLInputElement
@@ -58,8 +63,14 @@ fun main() {
     restoreCacheButton.textContent = "Restore cached cells"
     val clearCacheButton = document.createElement("button") as HTMLButtonElement
     clearCacheButton.textContent = "Clear browser cache"
+    val downloadDiagnosticsButton = document.createElement("button") as HTMLButtonElement
+    downloadDiagnosticsButton.textContent = "Download diagnostics JSON"
+    val downloadPngButton = document.createElement("button") as HTMLButtonElement
+    downloadPngButton.textContent = "Download PNG snapshot"
     sampleButton.parentElement?.appendChild(restoreCacheButton)
     sampleButton.parentElement?.appendChild(clearCacheButton)
+    sampleButton.parentElement?.appendChild(downloadDiagnosticsButton)
+    sampleButton.parentElement?.appendChild(downloadPngButton)
 
     val cacheHeading = document.createElement("h3")
     cacheHeading.textContent = "Cached cells"
@@ -85,6 +96,8 @@ fun main() {
     var selectedFiles = emptyList<File>()
     var selectedLabels = emptyList<String>()
     var activeScaleOverride: Double? = null
+    var lastDiagnosticsJson: String? = null
+    var lastSnapshotBaseName = "s57-render"
 
     fun cells(): List<S57CellSummary> = engine.listCells()
     fun activeCell(): S57CellSummary? = activeCellId?.let { id -> cells().firstOrNull { it.cellId == id } }
@@ -94,6 +107,26 @@ fun main() {
     fun formatBounds(bounds: GeoBounds?): String = bounds?.let {
         "W=${it.minLon}, S=${it.minLat}, E=${it.maxLon}, N=${it.maxLat}"
     } ?: "none"
+
+    fun snapshotBaseName(cellId: String, paletteName: String): String {
+        val safeCell = cellId.ifBlank { "cell" }.map { if (it.isLetterOrDigit()) it else '-' }.joinToString("")
+        val safePalette = paletteName.ifBlank { "palette" }.map { if (it.isLetterOrDigit()) it else '-' }.joinToString("")
+        return "s57-" + safeCell + "-" + safePalette
+    }
+
+    fun triggerDownload(fileName: String, dataUrl: String) {
+        val link = document.createElement("a") as HTMLAnchorElement
+        link.href = dataUrl
+        link.download = fileName
+        link.style.display = "none"
+        document.body?.appendChild(link)
+        link.click()
+        link.remove()
+    }
+
+    fun downloadText(fileName: String, content: String, mimeType: String) {
+        triggerDownload(fileName, "data:" + mimeType + ";charset=utf-8," + encodeURIComponent(content))
+    }
 
     fun updateCacheList(entries: List<BrowserChartCacheEntry> = cachedEntries) {
         cachedEntries = entries
@@ -199,6 +232,20 @@ fun main() {
         val summary = renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
         val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
         val source = matchingImport?.sourceImport
+        val pipelineReport = summary.pipelineDiagnosticReport()
+        lastSnapshotBaseName = snapshotBaseName(cell.cellId, request.paletteName)
+        lastDiagnosticsJson = RenderSnapshotDiagnosticExport(
+            cellId = cell.cellId,
+            paletteName = request.paletteName,
+            scaleDenominator = request.scaleDenominator,
+            widthPx = request.widthPx,
+            heightPx = request.heightPx,
+            renderMessage = summary.message,
+            artifact = result.diagnostics,
+            s52 = summary.s52,
+            pipeline = pipelineReport,
+            importSummary = importSummary()
+        ).toJson()
         val counters = Phase16Counters(
             rawFeatures = source?.raw?.features?.size ?: 0,
             rawVectors = source?.raw?.vectors?.size ?: 0,
@@ -223,6 +270,10 @@ fun main() {
             appendLine("Phase16 diagnostics:")
             appendLine(counters.toPlainText())
             appendLine("S-52 message: " + summary.message)
+            if (pipelineReport.diagnostics.isNotEmpty()) {
+                appendLine("Render pipeline diagnostics:")
+                appendLine(pipelineReport.toPlainText())
+            }
             if (matchingImport != null) appendLine("index: " + matchingImport.indexReport.toPlainText())
             if (result.frame.adapterDiagnostics.isNotEmpty()) {
                 appendLine("adapterDiagnostics:")
@@ -248,6 +299,7 @@ fun main() {
         selectedFiles = emptyList()
         selectedLabels = listOf("Built-in S-52 sanity sample")
         activeScaleOverride = null
+        lastDiagnosticsJson = null
         scaleInput.value = ""
         updateFileList()
         updateCellSummary()
@@ -260,6 +312,7 @@ fun main() {
         failures = emptyList()
         activeCellId = null
         activeScaleOverride = null
+        lastDiagnosticsJson = null
         scaleInput.value = ""
         selectedFiles = emptyList()
         selectedLabels = emptyList()
@@ -282,6 +335,7 @@ fun main() {
         failures = emptyList()
         activeCellId = null
         activeScaleOverride = null
+        lastDiagnosticsJson = null
         scaleInput.value = ""
         selectedFiles = files
         selectedLabels = labels
@@ -335,6 +389,7 @@ fun main() {
         failures = emptyList()
         activeCellId = null
         activeScaleOverride = null
+        lastDiagnosticsJson = null
         scaleInput.value = ""
         selectedFiles = emptyList()
         selectedLabels = entries.map { "cached: " + it.label() }
@@ -398,6 +453,7 @@ fun main() {
         failures = emptyList()
         activeCellId = null
         activeScaleOverride = null
+        lastDiagnosticsJson = null
         scaleInput.value = ""
         selectedFiles = emptyList()
         selectedLabels = listOf("bundled: data/statue-liberty.000")
@@ -533,6 +589,25 @@ fun main() {
                 },
                 onFailure = { status?.textContent = "Failed to clear browser cache: " + (it.message ?: it.toString()) }
             )
+        }
+        null
+    }
+
+    downloadDiagnosticsButton.onclick = {
+        val json = lastDiagnosticsJson
+        if (json == null) {
+            status?.textContent = "No render diagnostics are available yet. Render a cell first."
+        } else {
+            downloadText(lastSnapshotBaseName + "-diagnostics.json", json, "application/json")
+        }
+        null
+    }
+
+    downloadPngButton.onclick = {
+        try {
+            triggerDownload(lastSnapshotBaseName + ".png", canvas.toDataURL("image/png"))
+        } catch (t: Throwable) {
+            status?.textContent = "PNG snapshot export failed: " + (t.message ?: t.toString())
         }
         null
     }

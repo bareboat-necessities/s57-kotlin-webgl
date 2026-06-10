@@ -43,7 +43,7 @@ internal class BrowserS52Bridge(
         paletteName: String,
         scaleDenominator: Double
     ): BrowserS52PortrayalResult {
-        val diagnostics = mutableListOf<String>()
+        val diagnostics = mutableListOf<RenderPipelineDiagnostic>()
         val encFeatures = features.flatMap { it.toEncFeatures(diagnostics) }
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
@@ -51,7 +51,7 @@ internal class BrowserS52Bridge(
         return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, diagnostics, settings)
     }
 
-    private fun S57Feature.toEncFeatures(diagnostics: MutableList<String>): List<EncFeature> {
+    private fun S57Feature.toEncFeatures(diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
         val normalizedObject = objectClass.uppercase()
         val sourceGeometry = geometry
         return when {
@@ -61,25 +61,51 @@ internal class BrowserS52Bridge(
         }
     }
 
-    private fun S57Feature.splitMultiPolygonEncFeatures(polygons: List<S57Geometry.Polygon>, diagnostics: MutableList<String>): List<EncFeature> {
+    private fun S57Feature.splitMultiPolygonEncFeatures(polygons: List<S57Geometry.Polygon>, diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
         if (polygons.isEmpty()) {
-            diagnostics += "feature=$id multipolygon is empty"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass,
+                geometryType = "MultiPolygon",
+                code = "s52.empty_multipolygon",
+                message = "feature=$id multipolygon is empty"
+            )
             return emptyList()
         }
-        diagnostics += "feature=$id multipolygon split into ${polygons.size} features"
+        diagnostics += s52AdapterDiagnostic(
+            severity = RenderPipelineSeverity.Info,
+            featureId = id,
+            objectClass = objectClass,
+            geometryType = "MultiPolygon",
+            code = "s52.split_multipolygon",
+            message = "feature=$id multipolygon split into ${polygons.size} features"
+        )
         return polygons.mapIndexedNotNull { index, polygon ->
             toEncFeature(splitId(index), polygon, attributes, diagnostics)
         }
     }
 
-    private fun S57Feature.splitSoundingEncFeatures(points: List<GeoPoint>, diagnostics: MutableList<String>): List<EncFeature> {
+    private fun S57Feature.splitSoundingEncFeatures(points: List<GeoPoint>, diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
         if (points.isEmpty()) {
-            diagnostics += "feature=$id SOUNDG multipoint is empty"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass,
+                geometryType = "MultiPoint",
+                code = "s52.empty_sounding_multipoint",
+                message = "feature=$id SOUNDG multipoint is empty"
+            )
             return emptyList()
         }
         val valsou = attributes["VALSOU"]?.splitListValues().orEmpty()
         if (valsou.isNotEmpty() && valsou.size != points.size) {
-            diagnostics += "feature=$id SOUNDG VALSOU count ${valsou.size} does not match point count ${points.size}"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass,
+                geometryType = "MultiPoint",
+                attributes = listOf("VALSOU"),
+                code = "s52.sounding_value_count_mismatch",
+                message = "feature=$id SOUNDG VALSOU count ${valsou.size} does not match point count ${points.size}"
+            )
         }
         return points.mapIndexedNotNull { index, point ->
             val attrs = attributes.toMutableMap()
@@ -93,28 +119,48 @@ internal class BrowserS52Bridge(
         encId: Long,
         sourceGeometry: S57Geometry,
         sourceAttributes: Map<String, S57Value>,
-        diagnostics: MutableList<String>
+        diagnostics: MutableList<RenderPipelineDiagnostic>
     ): EncFeature? {
         val primitive = sourceGeometry.toS52Primitive()
         if (primitive == null) {
-            diagnostics += "feature=$id no renderable geometry"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.no_renderable_geometry",
+                message = "feature=$id no renderable geometry"
+            )
             return null
         }
         val objectClass = s52ObjectClass(objectClass)
         if (objectClass == null) {
-            diagnostics += "feature=$id unsupported objectClass=${this.objectClass}"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = this.objectClass,
+                primitive = primitive.name,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.unsupported_object_class",
+                message = "feature=$id unsupported objectClass=${this.objectClass}"
+            )
             return null
         }
         if (!objectClass.supports(primitive)) {
-            diagnostics += "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass.acronym,
+                primitive = primitive.name,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.unsupported_primitive",
+                message = "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
+            )
             return null
         }
-        val geometry = sourceGeometry.toS52Geometry(id, diagnostics) ?: return null
+        val geometry = sourceGeometry.toS52Geometry(id, this.objectClass, diagnostics) ?: return null
         return EncFeature(
             id = encId,
             objectClass = objectClass,
             primitive = primitive,
-            attributes = sourceAttributes.toS52Attributes(id, diagnostics),
+            attributes = sourceAttributes.toS52Attributes(id, this.objectClass, diagnostics),
             geometry = geometry,
             scaleMin = sourceAttributes["SCAMIN"]?.asIntOrNull(),
             scaleMax = sourceAttributes["SCAMAX"]?.asIntOrNull()
@@ -123,13 +169,19 @@ internal class BrowserS52Bridge(
 
     private fun S57Feature.splitId(index: Int): Long = id * 1000L + index.toLong() + 1L
 
-    private fun Map<String, S57Value>.toS52Attributes(featureId: Long, diagnostics: MutableList<String>): S57Attributes {
+    private fun Map<String, S57Value>.toS52Attributes(featureId: Long, objectClass: String, diagnostics: MutableList<RenderPipelineDiagnostic>): S57Attributes {
         val pairs = mutableListOf<Pair<S57Attribute, S52Value>>()
         for ((rawName, value) in this) {
             val name = rawName.uppercase()
             val attr = s52Attribute(name)
             if (attr == null) {
-                diagnostics += "feature=$featureId ignored unsupported attribute=$name"
+                diagnostics += s52AdapterDiagnostic(
+                    featureId = featureId,
+                    objectClass = objectClass,
+                    attributes = listOf(name),
+                    code = "s52.unsupported_attribute",
+                    message = "feature=$featureId ignored unsupported attribute=$name"
+                )
             } else {
                 pairs += attr to value.rawToS52Value(name)
             }
@@ -142,7 +194,7 @@ internal data class BrowserS52PortrayalResult(
     val profile: BrowserS52RuntimeProfile,
     val featureCount: Int,
     val commands: List<S52DrawCommand>,
-    val diagnostics: List<String>,
+    val diagnostics: List<RenderPipelineDiagnostic>,
     val settings: MarinerSettings
 ) {
     fun toSummary(failureStage: String = "none", drawCallCount: Int = 0): S52RenderSummary = S52RenderSummary(
@@ -156,9 +208,13 @@ internal data class BrowserS52PortrayalResult(
         textCommandCount = commands.count { it is S52DrawCommand.Text },
         soundingCommandCount = commands.count { it is S52DrawCommand.Sounding },
         diagnosticCount = diagnostics.size,
-        unsupportedObjectClassCount = diagnostics.count { "unsupported objectClass" in it },
-        unsupportedAttributeCount = diagnostics.count { "unsupported attribute" in it },
-        failureStage = failureStage
+        unsupportedObjectClassCount = diagnostics.count { it.code == "s52.unsupported_object_class" },
+        unsupportedAttributeCount = diagnostics.count { it.code == "s52.unsupported_attribute" },
+        missingSymbolCount = diagnostics.count { it.code == "s52.missing_symbol" },
+        missingColorTokenCount = diagnostics.count { it.code == "s52.missing_color_token" },
+        fallbackColorCount = diagnostics.count { it.fallbackColor != null },
+        failureStage = failureStage,
+        diagnostics = diagnostics
     )
 }
 
@@ -171,7 +227,7 @@ private fun S57Geometry.toS52Primitive(): PrimitiveType? = when (this) {
     is S57Geometry.MultiPolygon -> PrimitiveType.Area
 }
 
-private fun S57Geometry.toS52Geometry(featureId: Long, diagnostics: MutableList<String>): EncGeometry? = when (this) {
+private fun S57Geometry.toS52Geometry(featureId: Long, objectClass: String?, diagnostics: MutableList<RenderPipelineDiagnostic>): EncGeometry? = when (this) {
     S57Geometry.Empty -> null
     is S57Geometry.Point -> EncGeometry.Point(coordinate.toS52Coordinate())
     is S57Geometry.MultiPoint -> EncGeometry.MultiPoint(points.map { it.toS52Coordinate() })
@@ -179,7 +235,13 @@ private fun S57Geometry.toS52Geometry(featureId: Long, diagnostics: MutableList<
     is S57Geometry.Polygon -> {
         val outer = rings.firstOrNull().orEmpty()
         if (outer.size < 3) {
-            diagnostics += "feature=$featureId polygon has no valid outer ring"
+            diagnostics += s52AdapterDiagnostic(
+                featureId = featureId,
+                objectClass = objectClass,
+                geometryType = "Polygon",
+                code = "s52.invalid_polygon_outer_ring",
+                message = "feature=$featureId polygon has no valid outer ring"
+            )
             null
         } else {
             EncGeometry.Polygon(
@@ -189,6 +251,37 @@ private fun S57Geometry.toS52Geometry(featureId: Long, diagnostics: MutableList<
         }
     }
     is S57Geometry.MultiPolygon -> null
+}
+
+
+private fun s52AdapterDiagnostic(
+    featureId: Long,
+    objectClass: String? = null,
+    primitive: String? = null,
+    geometryType: String? = null,
+    attributes: List<String> = emptyList(),
+    severity: RenderPipelineSeverity = RenderPipelineSeverity.Warning,
+    code: String,
+    message: String
+): RenderPipelineDiagnostic = RenderPipelineDiagnostic(
+    stage = RenderPipelineStage.Adapter,
+    severity = severity,
+    code = code,
+    message = message,
+    featureId = featureId,
+    objectClass = objectClass,
+    primitive = primitive,
+    geometryType = geometryType,
+    attributes = attributes
+)
+
+private fun S57Geometry.diagnosticGeometryType(): String = when (this) {
+    S57Geometry.Empty -> "Empty"
+    is S57Geometry.Point -> "Point"
+    is S57Geometry.MultiPoint -> "MultiPoint"
+    is S57Geometry.LineString -> "LineString"
+    is S57Geometry.Polygon -> "Polygon"
+    is S57Geometry.MultiPolygon -> "MultiPolygon"
 }
 
 private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
