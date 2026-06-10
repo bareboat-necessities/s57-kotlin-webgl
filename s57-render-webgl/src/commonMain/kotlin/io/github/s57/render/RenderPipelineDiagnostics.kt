@@ -64,7 +64,13 @@ data class RenderPipelineSource(
 )
 
 data class RenderPipelineDiagnosticReport(
-    val diagnostics: List<RenderPipelineDiagnostic> = emptyList()
+    val diagnostics: List<RenderPipelineDiagnostic> = emptyList(),
+    val schemaVersion: Int = 1,
+    val cellId: String? = null,
+    val palette: String? = null,
+    val scaleDenominator: Double? = null,
+    val counters: Map<String, Int> = emptyMap(),
+    val metadata: Map<String, String> = emptyMap()
 ) {
     val errorCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Error }
     val warningCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Warning }
@@ -73,14 +79,46 @@ data class RenderPipelineDiagnosticReport(
     fun countsByStage(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.stage.id }.eachCount())
     fun countsBySeverity(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.severity.name.lowercase() }.eachCount())
     fun countsByObjectClass(): Map<String, Int> = sortedCounts(diagnostics.mapNotNull { it.source.objectClass }.groupingBy { it }.eachCount())
+    fun countsByPrimitive(): Map<String, Int> = sortedCounts(diagnostics.mapNotNull { it.source.primitive }.groupingBy { it }.eachCount())
     fun countsByCode(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.code }.eachCount())
 
-    fun plus(other: RenderPipelineDiagnosticReport): RenderPipelineDiagnosticReport =
-        RenderPipelineDiagnosticReport(diagnostics + other.diagnostics)
+    fun plus(other: RenderPipelineDiagnosticReport): RenderPipelineDiagnosticReport = RenderPipelineDiagnosticReport(
+        diagnostics = diagnostics + other.diagnostics,
+        schemaVersion = maxOf(schemaVersion, other.schemaVersion),
+        cellId = cellId ?: other.cellId,
+        palette = palette ?: other.palette,
+        scaleDenominator = scaleDenominator ?: other.scaleDenominator,
+        counters = mergeCounts(counters, other.counters),
+        metadata = metadata + other.metadata
+    )
+
+    fun withContext(
+        cellId: String? = this.cellId,
+        palette: String? = this.palette,
+        scaleDenominator: Double? = this.scaleDenominator,
+        counters: Map<String, Int> = this.counters,
+        metadata: Map<String, String> = this.metadata
+    ): RenderPipelineDiagnosticReport = copy(
+        cellId = cellId,
+        palette = palette,
+        scaleDenominator = scaleDenominator,
+        counters = counters,
+        metadata = metadata
+    )
 
     fun toPlainText(): String = buildString {
-        appendLine("renderPipelineDiagnostics total=${diagnostics.size} errors=$errorCount warnings=$warningCount infos=$infoCount")
+        appendLine("renderPipelineDiagnostics schemaVersion=$schemaVersion total=${diagnostics.size} errors=$errorCount warnings=$warningCount infos=$infoCount")
+        if (cellId != null || palette != null || scaleDenominator != null) {
+            append("context")
+            cellId?.let { append(" cell=").append(it) }
+            palette?.let { append(" palette=").append(it) }
+            scaleDenominator?.let { append(" scale=").append(it) }
+            appendLine()
+        }
+        if (counters.isNotEmpty()) appendLine("counters=" + sortedCounts(counters).toSummaryText())
         appendLine("stages=" + countsByStage().toSummaryText())
+        appendLine("severities=" + countsBySeverity().toSummaryText())
+        appendLine("primitives=" + countsByPrimitive().toSummaryText())
         appendLine("codes=" + countsByCode().toSummaryText())
         diagnostics.forEach { diagnostic ->
             append(diagnostic.severity.name.uppercase())
@@ -91,6 +129,8 @@ data class RenderPipelineDiagnosticReport(
             diagnostic.source.cellId?.let { append(" cell=").append(it) }
             diagnostic.source.featureId?.let { append(" feature=").append(it) }
             diagnostic.source.objectClass?.let { append(" object=").append(it) }
+            diagnostic.source.primitive?.let { append(" primitive=").append(it) }
+            diagnostic.source.geometryType?.let { append(" geometry=").append(it) }
             append(" - ")
             appendLine(diagnostic.message)
         }
@@ -98,6 +138,18 @@ data class RenderPipelineDiagnosticReport(
 
     fun toJson(): String = buildString {
         append('{')
+        appendJsonField("schemaVersion", schemaVersion)
+        append(',')
+        appendJsonNullableStringField("cellId", cellId)
+        append(',')
+        appendJsonNullableStringField("palette", palette)
+        append(',')
+        appendJsonNullableDoubleField("scaleDenominator", scaleDenominator)
+        append(',')
+        appendJsonIntObjectField("counters", sortedCounts(counters))
+        append(',')
+        appendJsonObjectField("metadata", metadata)
+        append(',')
         appendJsonField("total", diagnostics.size)
         append(',')
         appendJsonField("errors", errorCount)
@@ -113,6 +165,8 @@ data class RenderPipelineDiagnosticReport(
         appendJsonIntObjectField("countsByCode", countsByCode())
         append(',')
         appendJsonIntObjectField("countsByObjectClass", countsByObjectClass())
+        append(',')
+        appendJsonIntObjectField("countsByPrimitive", countsByPrimitive())
         append(',')
         append("\"diagnostics\":")
         append('[')
@@ -188,7 +242,58 @@ fun Phase16Counters.toRenderPipelineDiagnostics(cellId: String? = null): RenderP
             metadata = phase16Metadata()
         )
     }
-    return RenderPipelineDiagnosticReport(diagnostics)
+    return RenderPipelineDiagnosticReport(
+        diagnostics = diagnostics,
+        cellId = cellId,
+        counters = phase16Counters()
+    )
+}
+
+
+fun RenderedFrameSummary.pipelineDiagnosticReport(
+    cellId: String? = null,
+    palette: String? = null,
+    scaleDenominator: Double? = null
+): RenderPipelineDiagnosticReport {
+    val allDiagnostics = (pipelineDiagnostics + s52.diagnostics).distinctBy {
+        listOf(
+            it.stage.id,
+            it.severity.name,
+            it.code,
+            it.message,
+            it.source.cellId,
+            it.source.recordId,
+            it.source.featureId?.toString(),
+            it.source.objectClass,
+            it.source.primitive,
+            it.source.geometryType
+        ).joinToString("|")
+    }
+    return RenderPipelineDiagnosticReport(
+        diagnostics = allDiagnostics,
+        cellId = cellId,
+        palette = palette,
+        scaleDenominator = scaleDenominator,
+        counters = mapOf(
+            "widthPx" to widthPx,
+            "heightPx" to heightPx,
+            "s52EncFeatures" to s52.encFeatureCount,
+            "s52Commands" to s52.commandCount,
+            "s52DrawCalls" to s52.drawCallCount,
+            "s52Diagnostics" to s52.diagnosticCount,
+            "unsupportedObjectClasses" to s52.unsupportedObjectClassCount,
+            "unsupportedAttributes" to s52.unsupportedAttributeCount,
+            "missingSymbols" to s52.missingSymbolCount,
+            "missingColorTokens" to s52.missingColorTokenCount,
+            "fallbackColors" to s52.fallbackColorCount
+        ),
+        metadata = mapOf(
+            "message" to message,
+            "s52Profile" to s52.profile,
+            "s52FailureStage" to s52.failureStage,
+            "depthMeshEnabled" to depthMeshEnabled.toString()
+        )
+    )
 }
 
 fun RenderedArtifactReport.toRenderPipelineDiagnostics(cellId: String? = null): RenderPipelineDiagnosticReport {
@@ -233,8 +338,56 @@ fun RenderedArtifactReport.toRenderPipelineDiagnostics(cellId: String? = null): 
             metadata = artifactMetadata()
         )
     }
-    return RenderPipelineDiagnosticReport(diagnostics)
+    return RenderPipelineDiagnosticReport(
+        diagnostics = diagnostics,
+        cellId = cellId,
+        counters = artifactCounters()
+    )
 }
+
+private fun Phase16Counters.phase16Counters(): Map<String, Int> = mapOf(
+    "rawFeatures" to rawFeatures,
+    "rawVectors" to rawVectors,
+    "decodedFeatures" to decodedFeatures,
+    "geometryDiagnostics" to geometryDiagnostics,
+    "indexedFeatures" to indexedFeatures,
+    "queriedFeatures" to queriedFeatures,
+    "adaptedFeatures" to adaptedFeatures,
+    "projectedFeatures" to projectedFeatures,
+    "visibleFeatures" to visibleFeatures,
+    "onscreenFeatures" to onscreenFeatures,
+    "offscreenFeatures" to offscreenFeatures,
+    "clippedFeatures" to clippedFeatures,
+    "emptyGeometry" to emptyGeometry,
+    "adapterDiagnostics" to adapterDiagnostics,
+    "s52EncFeatures" to s52.encFeatureCount,
+    "s52Commands" to s52.commandCount,
+    "s52DrawCalls" to s52.drawCallCount,
+    "s52Diagnostics" to s52.diagnosticCount,
+    "unsupportedObjectClasses" to s52.unsupportedObjectClassCount,
+    "unsupportedAttributes" to s52.unsupportedAttributeCount,
+    "missingSymbols" to s52.missingSymbolCount,
+    "missingColorTokens" to s52.missingColorTokenCount,
+    "fallbackColors" to s52.fallbackColorCount
+)
+
+private fun RenderedArtifactReport.artifactCounters(): Map<String, Int> = mapOf(
+    "widthPx" to widthPx,
+    "heightPx" to heightPx,
+    "featureCount" to featureCount,
+    "visibleFeatureCount" to visibleFeatureCount,
+    "onscreenFeatureCount" to onscreenFeatureCount,
+    "offscreenFeatureCount" to offscreenFeatureCount,
+    "clippedFeatureCount" to clippedFeatureCount,
+    "pointFeatureCount" to pointFeatureCount,
+    "lineFeatureCount" to lineFeatureCount,
+    "polygonFeatureCount" to polygonFeatureCount,
+    "emptyGeometryCount" to emptyGeometryCount,
+    "centerCrosshairHitCount" to centerCrosshairHitCount,
+    "depthMeshVertexCount" to depthMeshVertexCount,
+    "depthMeshTriangleCount" to depthMeshTriangleCount,
+    "fallbackPlaceholderCount" to fallbackPlaceholderCount
+)
 
 private fun Phase16Counters.phase16Metadata(): Map<String, String> = mapOf(
     "rawFeatures" to rawFeatures.toString(),
@@ -283,6 +436,13 @@ private fun RenderedArtifactReport.artifactMetadata(): Map<String, String> = map
 private fun sortedCounts(counts: Map<String, Int>): Map<String, Int> =
     counts.entries.sortedBy { it.key }.associate { it.key to it.value }
 
+private fun mergeCounts(left: Map<String, Int>, right: Map<String, Int>): Map<String, Int> {
+    if (left.isEmpty()) return right
+    if (right.isEmpty()) return left
+    val keys = left.keys + right.keys
+    return keys.associateWith { (left[it] ?: 0) + (right[it] ?: 0) }
+}
+
 private fun Map<String, Int>.toSummaryText(): String =
     if (isEmpty()) "none" else entries.joinToString(",") { (key, value) -> "$key=$value" }
 
@@ -321,6 +481,36 @@ private fun StringBuilder.appendSourceJson(source: RenderPipelineSource) {
         appendJsonObjectField("attributes", source.attributes)
     }
     append('}')
+}
+
+fun RenderPipelineDiagnostic.toPlainText(): String = buildString {
+    append(severity.name.uppercase())
+    append(' ')
+    append(stage.id)
+    append(' ')
+    append(code)
+    source.cellId?.let { append(" cell=").append(it) }
+    source.recordId?.let { append(" record=").append(it) }
+    source.featureId?.let { append(" feature=").append(it) }
+    source.objectClass?.let { append(" object=").append(it) }
+    source.primitive?.let { append(" primitive=").append(it) }
+    source.geometryType?.let { append(" geometry=").append(it) }
+    append(" - ")
+    append(message)
+}
+
+val RenderPipelineDiagnostic.fallbackColor: String? get() = metadata["fallbackColor"] ?: metadata["fallbackRgb"]
+
+private fun StringBuilder.appendJsonNullableStringField(name: String, value: String?) {
+    appendJsonString(name)
+    append(':')
+    if (value == null) append("null") else appendJsonString(value)
+}
+
+private fun StringBuilder.appendJsonNullableDoubleField(name: String, value: Double?) {
+    appendJsonString(name)
+    append(':')
+    if (value == null) append("null") else append(value)
 }
 
 private fun StringBuilder.appendJsonObjectField(name: String, values: Map<String, String>) {
