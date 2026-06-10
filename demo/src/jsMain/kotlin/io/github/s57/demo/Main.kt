@@ -22,6 +22,7 @@ import io.github.s57.render.browserChartCacheSummary
 import io.github.s57.render.chartRenderRequestForCell
 import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
+import io.github.s57.render.pipelineDiagnosticReport
 import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
 import io.github.s57.render.toRenderPipelineDiagnostics
@@ -230,6 +231,11 @@ fun main() {
                 appendLine(pipelineDiagnostics.toPlainText())
             }
             appendLine("S-52 message: " + summary.message)
+            val pipelineReport = summary.pipelineDiagnosticReport()
+            if (pipelineReport.diagnostics.isNotEmpty()) {
+                appendLine("Render pipeline diagnostics:")
+                appendLine(pipelineReport.toPlainText())
+            }
             if (matchingImport != null) appendLine("index: " + matchingImport.indexReport.toPlainText())
             if (result.frame.adapterDiagnostics.isNotEmpty()) {
                 appendLine("adapterDiagnostics:")
