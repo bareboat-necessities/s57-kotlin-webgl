@@ -47,11 +47,11 @@ internal fun ArrayBuffer.toS57ByteArray(): ByteArray = toByteArray()
 
 internal fun ByteArray.toInt8Array(): Int8Array {
     val view = Int8Array(size)
-    for (index in indices) view[index] = this[index]
+    view.set(toTypedArray())
     return view
 }
 
-internal fun Int8Array.toByteArray(): ByteArray = ByteArray(length) { index -> this[index] }
+internal fun Int8Array.toByteArray(): ByteArray = unsafeCast<Array<Byte>>().toByteArray()
 
 private fun ArrayBuffer.toByteArray(): ByteArray {
     val view = Int8Array(this)
