@@ -292,7 +292,11 @@ fun main() {
             if (index >= files.size) {
                 activeCellId = chooseInitialActiveCell(cells(), activeCellId)
                 updateCellSummary()
-                status?.textContent = importSummary()
+                if (imports.isNotEmpty()) {
+                    renderActive("imported ENC")
+                } else {
+                    status?.textContent = importSummary()
+                }
                 return
             }
             val file = files[index]
