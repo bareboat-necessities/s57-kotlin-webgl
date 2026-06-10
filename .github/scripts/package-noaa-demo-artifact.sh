@@ -73,9 +73,9 @@ else
   # NOAA occasionally renames/reissues cells; keep this list local to CI and let
   # NOAA_STATUE_LIBERTY_ENC_URL override it when needed.
   candidates=(
+    "https://charts.noaa.gov/ENCs/US5NY1CE.zip"
     "https://charts.noaa.gov/ENCs/US5NY51M.zip"
     "https://charts.noaa.gov/ENCs/US5NY50M.zip"
-    "https://charts.noaa.gov/ENCs/US5NY1CM.zip"
     "https://charts.noaa.gov/ENCs/US5NY1BM.zip"
     "https://charts.noaa.gov/ENCs/US5NY1AM.zip"
     "https://charts.noaa.gov/ENCs/US4NY1AM.zip"
