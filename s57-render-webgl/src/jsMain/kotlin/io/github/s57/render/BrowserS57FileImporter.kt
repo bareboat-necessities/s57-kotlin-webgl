@@ -49,13 +49,18 @@ fun ArrayBuffer.toS57ByteArray(): ByteArray = toByteArray()
 
 internal fun ByteArray.toInt8Array(): Int8Array {
     val view = Int8Array(size)
-    for (index in indices) view[index] = this[index]
+    val dynamicView = view.asDynamic()
+    for (index in indices) dynamicView[index] = this[index].toInt()
     return view
 }
 
 internal fun Int8Array.toByteArray(): ByteArray {
     val bytes = ByteArray(length)
-    for (index in 0 until length) bytes[index] = this[index]
+    val dynamicView = asDynamic()
+    for (index in 0 until length) {
+        val value: Int = dynamicView[index]
+        bytes[index] = value.toByte()
+    }
     return bytes
 }
 
