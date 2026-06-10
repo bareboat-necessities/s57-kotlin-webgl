@@ -35,6 +35,7 @@ class S57RawDecoder(
 
     private fun decodeFeature(record: Iso8211Record): S57RawFeatureRecord? {
         val frid = record.field("FRID")?.content ?: return null
+        if (frid.textLooksLikeKeyValueFixture()) return decodeTextFeature(record)
         if (frid.size < 12) return decodeTextFeature(record)
 
         val rcnm = frid.u8(0)
@@ -297,6 +298,11 @@ class S57RawDecoder(
             if (idx <= 0) null else token.substring(0, idx).trim().uppercase() to token.substring(idx + 1).trim()
         }
         .toMap()
+
+    private fun ByteArray.textLooksLikeKeyValueFixture(): Boolean {
+        val text = decodeToString().trimEnd('\u0000', '\u001e', '\u001f')
+        return '=' in text && keyValuePairs(text).isNotEmpty()
+    }
 
     private fun bestCellName(text: String): String {
         val token = text.split(';', '|', ' ', '\u0000').firstOrNull { it.length in 3..32 && it.any(Char::isLetterOrDigit) }
