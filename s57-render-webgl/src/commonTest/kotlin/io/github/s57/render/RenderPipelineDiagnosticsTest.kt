@@ -8,7 +8,7 @@ class RenderPipelineDiagnosticsTest {
     @Test
     fun aggregatesAndExportsStructuredDiagnostics() {
         val report = RenderPipelineDiagnosticReport(
-            listOf(
+            diagnostics = listOf(
                 RenderPipelineDiagnostic(
                     stage = RenderPipelineStage.S52Color,
                     severity = RenderPipelineSeverity.Warning,
@@ -31,7 +31,11 @@ class RenderPipelineDiagnosticsTest {
                     message = "MultiPolygon is not adapted yet",
                     source = RenderPipelineSource(cellId = "US5TEST", objectClass = "LNDARE")
                 )
-            )
+            ),
+            cellId = "US5TEST",
+            palette = "DayBright",
+            scaleDenominator = 40000.0,
+            counters = mapOf("decodedFeatures" to 10, "drawn" to 2)
         )
 
         assertEquals(2, report.diagnostics.size)
@@ -42,8 +46,14 @@ class RenderPipelineDiagnosticsTest {
         val plain = report.toPlainText()
         assertTrue("missing-color-token" in plain)
         assertTrue("object=DEPARE" in plain)
+        assertTrue("context cell=US5TEST palette=DayBright scale=40000.0" in plain)
+        assertEquals(mapOf("Area" to 1), report.countsByPrimitive())
 
         val json = report.toJson()
+        assertTrue("\"schemaVersion\":1" in json)
+        assertTrue("\"palette\":\"DayBright\"" in json)
+        assertTrue("\"scaleDenominator\":40000.0" in json)
+        assertTrue("\"counters\":{\"decodedFeatures\":10,\"drawn\":2}" in json)
         assertTrue("\"countsByStage\":{\"adapter\":1,\"s52-color\":1}" in json)
         assertTrue("\"cellId\":\"US5TEST\"" in json)
         assertTrue("\"attributes\":{\"DRVAL1\":\"3\"}" in json)
@@ -77,6 +87,43 @@ class RenderPipelineDiagnosticsTest {
         assertTrue(report.diagnostics.any { it.code == "adapter-diagnostics-present" })
         assertTrue(report.diagnostics.any { it.code == "unsupported-object-classes" })
         assertTrue(report.toJson().contains("\"failureStage\":\"none\""))
+        assertTrue(report.toJson().contains("\"cellId\":\"US5TEST\""))
+        assertTrue(report.toJson().contains("\"decodedFeatures\":5"))
+    }
+
+    @Test
+    fun renderedFrameSummaryCreatesCanonicalReportContext() {
+        val summary = RenderedFrameSummary(
+            widthPx = 640,
+            heightPx = 480,
+            message = "rendered",
+            s52 = S52RenderSummary(
+                profile = "OpenCpn",
+                encFeatureCount = 4,
+                commandCount = 3,
+                drawCallCount = 2,
+                diagnosticCount = 1,
+                missingColorTokenCount = 1,
+                diagnostics = listOf(
+                    RenderPipelineDiagnostic(
+                        stage = RenderPipelineStage.S52Color,
+                        severity = RenderPipelineSeverity.Warning,
+                        code = "s52.missing_color_token",
+                        message = "Missing token",
+                        metadata = mapOf("fallbackRgb" to "#ff00ff")
+                    )
+                )
+            )
+        )
+
+        val report = summary.pipelineDiagnosticReport("US5TEST", "Night", 12000.0)
+
+        assertEquals("US5TEST", report.cellId)
+        assertEquals("Night", report.palette)
+        assertEquals(12000.0, report.scaleDenominator)
+        assertEquals(1, report.warningCount)
+        assertEquals("#ff00ff", report.diagnostics.first().fallbackColor)
+        assertTrue(report.toJson().contains("\"s52Commands\":3"))
     }
 
     @Test

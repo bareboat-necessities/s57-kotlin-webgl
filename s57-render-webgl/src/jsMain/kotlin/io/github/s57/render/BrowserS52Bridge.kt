@@ -268,11 +268,13 @@ private fun s52AdapterDiagnostic(
     severity = severity,
     code = code,
     message = message,
-    featureId = featureId,
-    objectClass = objectClass,
-    primitive = primitive,
-    geometryType = geometryType,
-    attributes = attributes
+    source = RenderPipelineSource(
+        featureId = featureId,
+        objectClass = objectClass,
+        primitive = primitive,
+        geometryType = geometryType,
+        attributes = attributes.associateWith { "involved" }
+    )
 )
 
 private fun S57Geometry.diagnosticGeometryType(): String = when (this) {

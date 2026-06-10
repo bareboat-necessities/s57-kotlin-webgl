@@ -130,11 +130,12 @@ private fun BrowserS57WebGlRenderer.geometryFallbackRender(
 ): RenderedFrameSummary {
     val fallback = renderFrame(canvasId, frame)
     val fallbackDiagnostic = RenderPipelineDiagnostic(
-        stage = if (s52.failureStage == "portrayal") RenderPipelineStage.S52Portrayal else RenderPipelineStage.S52WebGl,
+        stage = if (s52.failureStage == "portrayal") RenderPipelineStage.S52Portrayal else RenderPipelineStage.WebGl,
         severity = RenderPipelineSeverity.Warning,
         code = "s52.geometry_fallback",
         message = reason,
-        cellId = frame.request.cellId
+        source = RenderPipelineSource(cellId = frame.request.cellId),
+        metadata = mapOf("failureStage" to s52.failureStage)
     )
     fallbackDiagnostic.logRenderDiagnosticToConsole()
     val diagnostics = s52.diagnostics + fallbackDiagnostic

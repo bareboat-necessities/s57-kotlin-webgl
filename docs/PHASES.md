@@ -219,7 +219,8 @@ Adds the first reusable import pipeline from S-57/ENC bytes to a decoded geometr
 
 Phase 26 is the plan for hardening real ENC rendering so missing symbology,
 wrong colors, dropped objects, geometry problems, and browser/WebGL fallbacks are
-reported instead of silently disappearing. The detailed work plan lives in
+reported instead of silently disappearing. The detailed work plan and P26.1–P26.6
+completion backlog live in
 `docs/PHASE26_FULL_ENC_PORTRAYAL_AND_SNAPSHOTS.md`.
 
 Acceptance targets:

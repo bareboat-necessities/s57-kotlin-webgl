@@ -15,6 +15,7 @@ import io.github.s57.render.ChartRenderMode
 import io.github.s57.render.ChartUserEvent
 import io.github.s57.render.DepthMeshConfig
 import io.github.s57.render.Phase16Counters
+import io.github.s57.render.RenderPipelineDiagnosticReport
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
@@ -30,6 +31,7 @@ import io.github.s57.render.toS57ByteArray
 import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlin.js.JSON
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
@@ -60,8 +62,11 @@ fun main() {
     restoreCacheButton.textContent = "Restore cached cells"
     val clearCacheButton = document.createElement("button") as HTMLButtonElement
     clearCacheButton.textContent = "Clear browser cache"
+    val diagnosticsJsonButton = document.createElement("button") as HTMLButtonElement
+    diagnosticsJsonButton.textContent = "Download diagnostics JSON"
     sampleButton.parentElement?.appendChild(restoreCacheButton)
     sampleButton.parentElement?.appendChild(clearCacheButton)
+    sampleButton.parentElement?.appendChild(diagnosticsJsonButton)
 
     val cacheHeading = document.createElement("h3")
     cacheHeading.textContent = "Cached cells"
@@ -87,6 +92,30 @@ fun main() {
     var selectedFiles = emptyList<File>()
     var selectedLabels = emptyList<String>()
     var activeScaleOverride: Double? = null
+    var latestPipelineReport = RenderPipelineDiagnosticReport(
+        metadata = mapOf("status" to "Phase 26 viewer initialized; no render has completed yet")
+    )
+
+    fun publishPhase26Report(report: RenderPipelineDiagnosticReport) {
+        latestPipelineReport = report
+        window.asDynamic().s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
+        window.asDynamic().s57Phase26ReportJson = { latestPipelineReport.toJson() }
+        window.asDynamic().s57Phase26Report = { JSON.parse<dynamic>(latestPipelineReport.toJson()) }
+    }
+
+    fun downloadTextFile(fileName: String, mimeType: String, text: String) {
+        val blob = js("new Blob([text], { type: mimeType })")
+        val url = js("URL.createObjectURL(blob)")
+        val anchor = document.createElement("a")
+        anchor.setAttribute("href", url.unsafeCast<String>())
+        anchor.setAttribute("download", fileName)
+        document.body?.appendChild(anchor)
+        anchor.asDynamic().click()
+        anchor.parentNode?.removeChild(anchor)
+        js("URL.revokeObjectURL(url)")
+    }
+
+    publishPhase26Report(latestPipelineReport)
 
     fun cells(): List<S57CellSummary> = engine.listCells()
     fun activeCell(): S57CellSummary? = activeCellId?.let { id -> cells().firstOrNull { it.cellId == id } }
@@ -221,6 +250,16 @@ fun main() {
         )
         val pipelineDiagnostics = counters.toRenderPipelineDiagnostics(cell.cellId)
             .plus(result.diagnostics.toRenderPipelineDiagnostics(cell.cellId))
+        val renderReport = summary.pipelineDiagnosticReport(cell.cellId, palette, scale)
+        val combinedReport = pipelineDiagnostics
+            .plus(renderReport)
+            .withContext(
+                cellId = cell.cellId,
+                palette = palette,
+                scaleDenominator = scale,
+                metadata = mapOf("label" to label, "bounds" to request.bounds.toString())
+            )
+        publishPhase26Report(combinedReport)
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
             appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator + " palette=" + request.paletteName)
@@ -231,11 +270,11 @@ fun main() {
                 appendLine(pipelineDiagnostics.toPlainText())
             }
             appendLine("S-52 message: " + summary.message)
-            val pipelineReport = summary.pipelineDiagnosticReport()
-            if (pipelineReport.diagnostics.isNotEmpty()) {
+            if (renderReport.diagnostics.isNotEmpty()) {
                 appendLine("Render pipeline diagnostics:")
-                appendLine(pipelineReport.toPlainText())
+                appendLine(renderReport.toPlainText())
             }
+            appendLine("Diagnostics JSON is available through the download button and window.s57Phase26Report().")
             if (matchingImport != null) appendLine("index: " + matchingImport.indexReport.toPlainText())
             if (result.frame.adapterDiagnostics.isNotEmpty()) {
                 appendLine("adapterDiagnostics:")
@@ -534,6 +573,15 @@ fun main() {
 
     clearButton.onclick = {
         clearAll()
+        null
+    }
+
+    diagnosticsJsonButton.onclick = {
+        downloadTextFile(
+            fileName = "s57-phase26-diagnostics.json",
+            mimeType = "application/json",
+            text = latestPipelineReport.toJson()
+        )
         null
     }
 

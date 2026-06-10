@@ -231,14 +231,219 @@ Candidate staged gates:
 6. Expand the S-57 catalogue and geometry coverage tests.
 7. Add a public-cell corpus and tighten warning thresholds into failure gates.
 
-## Open questions before implementation
 
-- Which NOAA/public ENC URLs should be preferred for the first CI cell, and do
-  they have stable availability and redistribution terms suitable for build-time
-  download?
-- Should the PNG snapshot be canvas-only, full-page screenshot, or both?
-- Should missing S-52 assets be treated as warnings until the S-52 dependency is
-  upgraded again, or should any missing asset fail CI immediately?
-- What is the minimum acceptable first-pass coverage threshold for real cells:
-  all decoded objects adapted, all adapted objects portrayed, or all portrayed
-  objects drawn without fallback?
+## Completion execution plan
+
+The following backlog turns the Phase 26 intent above into implementation slices
+that can be landed independently while keeping the renderer usable after every
+merge.  Each slice must leave the demo able to import the sample dataset and must
+keep diagnostics visible rather than replacing them with silent fallbacks.
+
+### P26.1 — structured diagnostic contract
+
+Goal: define the common report shape before changing render behavior.
+
+Tasks:
+
+- Add a `RenderPipelineDiagnostic`/`RenderPipelineReport` contract in the render
+  common source set with stable enums for stage and severity plus string codes
+  for forward compatibility.
+- Include optional source metadata fields for cell id, feature id, record id,
+  object class, primitive, geometry type, attribute names, S-52 asset name,
+  color token, palette, WebGL command, and fallback reason.
+- Add report combinators for merging import, geometry, adapter, S-52, WebGL, and
+  artifact diagnostics without losing original messages.
+- Add deterministic JSON and plain-text exporters.  JSON is the machine-readable
+  source of truth; the demo status panel and CI summary are derived views.
+- Convert the existing Phase 16/artifact diagnostics into this report as the
+  first producer, then add unit tests for aggregation by stage, severity, code,
+  object class, and primitive.
+
+Definition of done:
+
+- Every existing diagnostic summary still appears in plain text.
+- New JSON export contains `schemaVersion`, `cellId`, `palette`, `scale`,
+  counters, diagnostics, and source-stage totals.
+- Warning/error diagnostics can be routed to browser console logging from the
+  shared report without duplicating classification logic.
+
+### P26.2 — decode, geometry, and adapter accounting
+
+Goal: prove that no feature disappears between S-57 decode and S-52 adaptation
+without either being counted or receiving a diagnostic.
+
+Tasks:
+
+- Preserve raw S-57 identifiers from ISO8211 records into `S57Feature`, indexed
+  records, projected features, adapter output, and rendered-frame summaries.
+- Add decode/index/adapt accounting counters: decoded, indexed, queried,
+  adapted, skipped, deferred, empty geometry, geometry diagnostic, and unsupported
+  primitive counts.
+- Emit structured diagnostics for unresolved FSPT references, suspicious ring
+  topology, reversed edge orientation, unsupported collection/meta objects,
+  unsupported primitives, dropped attributes, and empty geometries.
+- Create fixture tests that assert
+  `decoded = indexed + explicitlySkippedOrDeferred` for imported cells and
+  `queried = adapted + explicitlySkippedOrDeferred` for render requests.
+- Extend object-class coverage output so unknown `OBJL_###` and `ATTL_###`
+  values remain visible in reports rather than becoming anonymous fallbacks.
+
+Definition of done:
+
+- A real ENC import prints per-object-class decode and geometry counts.
+- Adapter diagnostics include enough metadata to locate the original S-57 record.
+- Unit tests fail on silent drops at decode/index/adapt boundaries.
+
+### P26.3 — S-52 symbology and color audit
+
+Goal: make missing symbology and wrong colors observable before visual review.
+
+Tasks:
+
+- Inventory browser-available S-52 lookup tables, color tables, symbols, line
+  styles, patterns, text rules, conditional symbology procedures, and supported
+  draw-command variants at startup.
+- Normalize S-57 attributes according to catalogue type information before
+  handing them to the S-52 bridge; log every value that cannot be converted.
+- Emit diagnostics for unsupported object classes, missing lookup rules,
+  conditional symbology fallbacks, unsupported symbols/patterns/line styles/text,
+  missing color tokens, and fallback colors.
+- Add counters for `portrayed`, `symbolized`, `drawn`, `fallbackDrawn`,
+  `hiddenByScale`, `clipped`, `missingSymbol`, `missingPattern`,
+  `missingLineStyle`, `missingTextRule`, `missingColorToken`, and
+  `fallbackColor`.
+- Keep debug fallback rendering visually distinct from real S-52 portrayal and
+  include it in reports as fallback output, not as successful portrayal.
+
+Definition of done:
+
+- Selecting day/dusk/night palettes reports the palette, color token, resolved
+  RGB value, and fallback RGB when used.
+- Missing S-52 assets appear in JSON, status text, and browser console warnings.
+- Adapter and browser bridge tests cover at least common DEPARE, DEPCNT, SOUNDG,
+  LIGHTS, BOYLAT/BCNLAT, WRECKS, and OBSTRN paths.
+
+### P26.4 — demo diagnostics and exports
+
+Goal: make the browser demo an inspection tool for imported real cells.
+
+Tasks:
+
+- Replace the single status string with a diagnostics panel that keeps import,
+  cache, render, and S-52 warnings visible until the user clears them.
+- Add filters by severity, stage, object class, and diagnostic code.
+- Add coverage counters near the canvas for decode/index/query/adapt/portray/
+  draw/fallback/hidden/clipped/empty/missing/error totals.
+- Add download buttons for the active diagnostics JSON, canvas-only PNG, and
+  optional full-page screenshot when the harness supports it.
+- Expose a minimal browser-test hook, such as `window.s57Phase26Report()`, that
+  returns the latest report and `window.s57Phase26RenderReady` or an equivalent
+  promise/state flag for CI.
+
+Definition of done:
+
+- Import failures and render warnings survive cell and palette changes.
+- Downloaded JSON and PNG are non-empty and identify the active cell id, palette,
+  scale, and render timestamp.
+- The existing bundled NOAA demo still auto-loads when present.
+
+### P26.5 — headless PNG/JSON snapshot harness
+
+Goal: create build artifacts that let every pull request inspect actual rendered
+output from a public ENC cell.
+
+Tasks:
+
+- Add `.github/scripts/download-first-enc-cell.sh` to try a short ordered list of
+  public NOAA ENC ZIP URLs, extract the first `.000`, and write metadata about
+  the selected source URL and cell file.
+- Add a local snapshot harness under `tools/ci-render-snapshot/` that serves the
+  Kotlin/JS demo output, imports the downloaded `.000` through the same browser
+  path as the demo, waits for the Phase 26 ready hook, captures `render.png`,
+  writes `diagnostics.json`, and writes `summary.txt`.
+- Prefer a canvas-only PNG for stable visual comparison.  Optionally add a
+  full-page screenshot later as a secondary artifact for debugging UI regressions.
+- Make the harness fail on missing ENC download, import crash, render crash,
+  empty PNG, missing diagnostics JSON, or malformed JSON.
+- Initially warn, not fail, on nonzero missing-symbol, missing-color, fallback,
+  or unknown-object counts until coverage thresholds are baselined.
+
+Definition of done:
+
+- A local command can produce `build/ci-enc-snapshot/render.png`,
+  `diagnostics.json`, and `summary.txt` from a downloaded cell.
+- The summary includes selected URL, extracted ENC file, cell id, feature counts,
+  palette, image dimensions, warning count, error count, and fallback counters.
+
+### P26.6 — GitHub Actions artifact upload and quality gates
+
+Goal: publish the same visual smoke artifacts for every build and gradually turn
+coverage regressions into failures.
+
+Tasks:
+
+- Run the snapshot harness after the normal Kotlin/JVM/JS build and after the
+  demo distribution is available.
+- Upload `build/ci-enc-snapshot/render.png`, `diagnostics.json`, and
+  `summary.txt` as one artifact named `enc-render-snapshot` so reviewers can
+  download a complete inspection bundle.
+- Keep the current runnable demo ZIP artifact for manual reproduction.
+- Add a checked-in threshold file for corpus cells with initial warning-only
+  limits for missing symbols/colors/fallbacks/unknown objects.
+- Promote threshold violations from warnings to failures after the diagnostic
+  spine and S-52 asset inventory have stabilized.
+
+Definition of done:
+
+- CI artifacts contain both the runnable demo ZIP and the per-build ENC render
+  snapshot bundle.
+- CI fails only on hard download/import/render/artifact errors at first.
+- A later tightening PR can update thresholds without changing the harness
+  contract.
+
+## Resolved implementation decisions for the first pass
+
+- **Preferred public-cell source:** use NOAA ENC ZIP URLs because the existing CI
+  already downloads NOAA data for the demo artifact.  Keep the URL list ordered
+  and overridable through an environment variable so outages or cell renames do
+  not require code changes.
+- **Snapshot type:** capture a canvas-only PNG first for deterministic render
+  inspection; add full-page screenshots later only as supplemental UI debugging
+  artifacts.
+- **First-pass failure policy:** fail hard only on download, import, render,
+  empty PNG, missing JSON, or malformed JSON.  Treat missing symbols, missing
+  colors, unknown objects, and fallback draws as warnings until baseline reports
+  are stable.
+- **Report ownership:** JSON diagnostics are canonical.  Status text, console
+  messages, CI summaries, and future thresholds are derived from the same report.
+- **Scope guard:** Phase 26 remains static ENC rendering and diagnostics only;
+  no AIS, NMEA, ownship, route planning, navigation alarms, route monitoring, or
+  certified ECDIS/chartplotter workflow is added.
+
+## Next implementation checkpoint
+
+The immediate next coding checkpoint should implement P26.1 and the smallest
+vertical slice of P26.4:
+
+1. Add the shared report model/exporters.
+2. Convert Phase 16/artifact diagnostics into the shared report.
+3. Store the latest report in the demo and expose a browser-test hook.
+4. Add a JSON download button before changing the S-52 bridge.
+5. Add unit tests for report aggregation and exporter stability.
+
+This sequence gives later geometry, symbology, and CI snapshot work one stable
+report contract to build on, and it lets missing-symbol/color work fail loudly as
+soon as those producers are wired in.
+
+## Remaining open questions before implementation
+
+- What exact NOAA URL order should be checked in for the first snapshot job, and
+  which cells best exercise coastline, depth areas, soundings, lights, buoys,
+  beacons, restricted areas, bridges, cables, and metadata objects?
+- Which threshold file format should be used for corpus quality gates: JSON for
+  Kotlin/JS-native parsing, or YAML for easier human editing?
+- What baseline warning limits are acceptable after the first corpus reports are
+  generated: all decoded objects adapted, all adapted objects portrayed, or all
+  portrayed objects drawn without fallback?
+- Should the later full-page screenshot artifact include the diagnostics panel
+  state, or should UI evidence stay separate from render-quality artifacts?
