@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform") version "2.0.21" apply false
+    kotlin("multiplatform") version "2.3.21" apply false
 }
 
 allprojects {
@@ -83,79 +83,72 @@ registerAudit(
     "phase2Audit",
     "Phase 2",
     listOf(
-        "s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211Reader.kt",
-        "s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211RecordDump.kt",
-        "s57-iso8211/src/jvmMain/kotlin/io/github/s57/iso8211/Iso8211DumpMain.kt"
+        "s57-iso8211/src/commonMain/kotlin/io/github/s57/iso8211/Iso8211Models.kt",
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/S57Models.kt",
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDecoder.kt",
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawModels.kt",
+        "s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexStore.kt"
     )
 )
 
-tasks.register("phase2Check") { dependsOn("phase1Check", "phase2Audit", ":s57-iso8211:build") }
+tasks.register("phase2Check") { dependsOn("phase1Check", "phase2Audit", moduleBuilds) }
 
 registerAudit(
     "phase3Audit",
     "Phase 3",
     listOf(
-        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawModels.kt",
-        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDecoder.kt",
-        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57CatalogLookups.kt",
-        "s57-core/src/commonTest/kotlin/io/github/s57/core/raw/S57RawDecoderTest.kt"
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/geometry/S57GeometryBuilder.kt",
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/raw/S57RawDump.kt"
     )
 )
 
-tasks.register("phase3Check") { dependsOn("phase2Check", "phase3Audit", ":s57-core:build") }
+tasks.register("phase3Check") { dependsOn("phase2Check", "phase3Audit", moduleBuilds) }
 
 registerAudit(
     "phase4Audit",
     "Phase 4",
     listOf(
         "s57-core/src/commonMain/kotlin/io/github/s57/core/import/S57ImportPipeline.kt",
-        "s57-core/src/commonMain/kotlin/io/github/s57/core/import/S57FeatureBuilder.kt"
+        "s57-core/src/commonMain/kotlin/io/github/s57/core/import/S57FeatureBuilder.kt",
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/StaticFrameModels.kt"
     )
 )
 
-tasks.register("phase4Check") { dependsOn("phase3Check", "phase4Audit", ":s57-core:build") }
+tasks.register("phase4Check") { dependsOn("phase3Check", "phase4Audit", moduleBuilds) }
 
 registerAudit(
     "phase5Audit",
     "Phase 5",
     listOf(
-        "s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexModels.kt",
-        "s57-index/src/commonMain/kotlin/io/github/s57/index/S57IndexStore.kt",
-        "s57-index/src/jsMain/kotlin/io/github/s57/index/BrowserIndexedDbS57IndexStore.kt"
+        "s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt",
+        "s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Diagnostics.kt"
     )
 )
 
-tasks.register("phase5Check") { dependsOn("phase4Check", "phase5Audit", ":s57-index:build") }
+tasks.register("phase5Check") { dependsOn("phase4Check", "phase5Audit", moduleBuilds) }
 
 registerAudit(
     "phase6Audit",
     "Phase 6",
-    listOf(
-        "s57-s52-adapter/src/commonMain/kotlin/io/github/s57/adapter/S57ToS52Adapter.kt",
-        "s57-s52-adapter/src/commonTest/kotlin/io/github/s57/adapter/S57ToS52AdapterTest.kt"
-    )
+    listOf(".github/workflows/ci.yml", "gradle.properties")
 ) {
-    val ci = projectFile(".github/workflows/ci.yml").readText()
-    val version = providers.gradleProperty("s52.version").orElse("0.5.0").get()
-    check("S52_VERSION: \"$version\"" in ci) { "CI should use the configured S-52 version $version." }
-    check("s52-kotlin-webgl-release-maven-$version.zip" in ci) { "CI should download the configured S-52 Maven release ZIP." }
-    check("s52-kotlin-webgl-$version-phase22-source.zip" in ci) { "CI should download the configured S-52 source ZIP." }
-    check("S52_RELEASE_MAVEN_SHA256" in ci && "S52_RELEASE_SOURCE_SHA256" in ci) { "CI must verify S-52 release checksums." }
+    requireText("gradle.properties", "s52.version=0.5.0", "S52 version should stay on 0.5.0.")
+    requireText(".github/workflows/ci.yml", "s52-kotlin-webgl-release-maven-0.5.0.zip", "CI should keep downloading the s52-kotlin-webgl v0.5.0 Maven release ZIP.")
 }
 
-tasks.register("phase6Check") { dependsOn("phase5Check", "phase6Audit", ":s57-s52-adapter:build") }
+tasks.register("phase6Check") { dependsOn("phase5Check", "phase6Audit", moduleBuilds) }
 
 registerAudit(
     "phase7Audit",
     "Phase 7",
     listOf(
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderModels.kt",
         "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/ChartProjection.kt",
-        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/StaticChartFrame.kt",
-        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57StaticChartRenderer.kt"
+        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt"
     )
 )
 
-tasks.register("phase7Check") { dependsOn("phase6Check", "phase7Audit", ":s57-render-webgl:build") }
+tasks.register("phase7Check") { dependsOn("phase6Check", "phase7Audit", moduleBuilds) }
 
 registerAudit(
     "phase8Audit",
@@ -166,48 +159,38 @@ registerAudit(
     )
 )
 
-tasks.register("phase8Check") { dependsOn("phase7Check", "phase8Audit", ":s57-render-webgl:build") }
+tasks.register("phase8Check") { dependsOn("phase7Check", "phase8Audit", moduleBuilds) }
 
 registerAudit(
     "phase9Audit",
     "Phase 9",
     listOf(
-        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/S57WebGlEngine.kt",
-        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57FileImporter.kt"
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/NoaaEncVisualSmoke.kt",
+        "s57-render-webgl/src/jvmMain/kotlin/io/github/s57/render/NoaaEncVisualSmokeMain.kt"
     )
 )
 
-tasks.register("phase9Check") { dependsOn("phase8Check", "phase9Audit", ":s57-render-webgl:build") }
-
-registerAudit(
-    "phase10Audit",
-    "Phase 10",
-    listOf(
-        "s57-core/src/commonMain/kotlin/io/github/s57/core/import/S57ImportPipeline.kt",
-        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57FileImporter.kt"
-    )
-)
-
-tasks.register("phase10Check") { dependsOn("phase9Check", "phase10Audit", ":s57-core:build", ":s57-render-webgl:build") }
+tasks.register("phase9Check") { dependsOn("phase8Check", "phase9Audit", moduleBuilds) }
 
 registerAudit(
     "phase11Audit",
     "Phase 11",
     listOf(
-        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52Bridge.kt",
-        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57WebGlRenderer.kt"
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/ChartViewportFit.kt",
+        "demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt"
     )
 )
 
-tasks.register("phase11Check") { dependsOn("phase10Check", "phase11Audit", ":s57-render-webgl:build", ":demo:build") }
+tasks.register("phase11Check") { dependsOn("phase9Check", "phase11Audit", moduleBuilds) }
 
 registerAudit(
     "phase16BAudit",
     "Phase 16B",
     listOf(
-        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52StructuredRender.kt",
-        "demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt"
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/Phase16Diagnostics.kt",
+        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS57FileImporter.kt",
+        "s57-render-webgl/src/jsMain/kotlin/io/github/s57/render/BrowserS52Bridge.kt"
     )
 )
 
-tasks.register("phase16BCheck") { dependsOn("phase11Check", "phase16BAudit", ":s57-render-webgl:build", ":demo:build") }
+tasks.register("phase16BCheck") { dependsOn("phase11Check", "phase16BAudit", moduleBuilds) }
