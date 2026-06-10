@@ -22,7 +22,8 @@ class BrowserChartIndexedDbCache(
                             val entries = mutableListOf<BrowserChartCacheEntry>()
                             val length = (rows.length as Number).toInt()
                             for (index in 0 until length) {
-                                rows[index].toCacheEntryOrNull()?.let(entries::add)
+                                val entry = rows[index].toCacheEntryOrNull()
+                                if (entry != null) entries.add(entry)
                             }
                             callback(Result.success(entries))
                             null
