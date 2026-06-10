@@ -8,7 +8,7 @@ ARTIFACT_ROOT="build/noaa-statue-liberty-demo"
 APP_DIR="$ARTIFACT_ROOT/app"
 DATA_DIR="$APP_DIR/data"
 ZIP_PATH="build/noaa-statue-liberty-demo.zip"
-mkdir -p "$APP_DIR" "$DATA_DIR" build
+mkdir -p "$APP_DIR" build
 
 DIST_DIR="demo/build/dist/js/productionExecutable"
 if [[ ! -d "$DIST_DIR" ]]; then
@@ -21,6 +21,9 @@ if [[ -z "${DIST_DIR:-}" || ! -d "$DIST_DIR" ]]; then
 fi
 
 rsync -a --delete "$DIST_DIR/" "$APP_DIR/"
+# rsync --delete mirrors the Kotlin/JS dist and removes directories that are not
+# in the dist, so create data/ only after that sync.
+mkdir -p "$DATA_DIR"
 
 # Keep the artifact self-describing even when opened outside GitHub Actions.
 cat > "$APP_DIR/README.txt" <<'README'
@@ -55,6 +58,7 @@ try_download_zip() {
     local enc_file
     enc_file="$(find "$TMP_ENC_DIR/extract" -type f -iname '*.000' | sort | head -1 || true)"
     if [[ -n "$enc_file" && -s "$enc_file" ]]; then
+      mkdir -p "$DATA_DIR"
       cp "$enc_file" "$DATA_DIR/statue-liberty.000"
       echo "Bundled NOAA ENC file: $enc_file"
       return 0
