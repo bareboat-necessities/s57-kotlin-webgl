@@ -255,18 +255,87 @@ class S57RawDecoder(
         val raw = record.fields.associate { it.tag to it.text().printableOnly() }
         val pairs = record.fields.flatMap { keyValuePairs(it.text()).entries }.associate { it.key to it.value }
         val dsidText = record.field("DSID")?.text().orEmpty().printableOnly()
+        val binaryDsid = record.field("DSID")?.let { decodeBinaryDsid(it.content) }
+        val binaryDspm = record.field("DSPM")?.let { decodeBinaryDspm(it.content) }
         return S57DatasetMetadata(
-            cellName = pairs["DSNM"] ?: pairs["CELL"] ?: bestCellName(dsidText),
-            edition = (pairs["EDTN"] ?: pairs["EDITION"])?.toIntOrNull(),
-            updateNumber = (pairs["UPDN"] ?: pairs["UPDATE"] ?: pairs["UPDNM"])?.toIntOrNull(),
-            issueDate = pairs["ISDT"],
-            updateApplicationDate = pairs["UADT"],
-            productSpecification = pairs["STED"] ?: pairs["PROF"],
-            coordinateMultiplier = pairs["COMF"]?.toIntOrNull(),
-            soundingMultiplier = pairs["SOMF"]?.toIntOrNull(),
+            cellName = pairs["DSNM"] ?: pairs["CELL"] ?: binaryDsid?.cellName ?: bestCellName(dsidText),
+            edition = (pairs["EDTN"] ?: pairs["EDITION"])?.toIntOrNull() ?: binaryDsid?.edition,
+            updateNumber = (pairs["UPDN"] ?: pairs["UPDATE"] ?: pairs["UPDNM"])?.toIntOrNull() ?: binaryDsid?.updateNumber,
+            issueDate = pairs["ISDT"] ?: binaryDsid?.issueDate,
+            updateApplicationDate = pairs["UADT"] ?: binaryDsid?.updateApplicationDate,
+            productSpecification = pairs["STED"] ?: pairs["PROF"] ?: binaryDsid?.productSpecification,
+            coordinateMultiplier = pairs["COMF"]?.toIntOrNull() ?: binaryDspm?.coordinateMultiplier,
+            soundingMultiplier = pairs["SOMF"]?.toIntOrNull() ?: binaryDspm?.soundingMultiplier,
             rawFields = raw
         )
     }
+
+    private fun decodeBinaryDsid(data: ByteArray): BinaryDsidMetadata {
+        // S-57 DSID is mostly binary: RCNM(1), RCID(4), EXPP(1), INTU(1),
+        // followed by variable text subfields DSNM, EDTN, UPDN, UADT, ISDT, STED, ...
+        // Treating the whole field as printable text can pick the binary RCID bytes
+        // as a bogus cell name such as "1600". Decode the fixed prefix first.
+        if (data.size < DSID_TEXT_OFFSET + 1) return BinaryDsidMetadata()
+        val fields = data.terminatedTextFields(DSID_TEXT_OFFSET)
+        val cellName = fields.getOrNull(0).orEmpty().trim().takeIf { looksLikeS57CellName(it) }
+        return BinaryDsidMetadata(
+            cellName = cellName,
+            edition = fields.getOrNull(1)?.trim()?.toIntOrNull(),
+            updateNumber = fields.getOrNull(2)?.trim()?.toIntOrNull(),
+            updateApplicationDate = fields.getOrNull(3)?.trim()?.takeIf { it.isNotBlank() },
+            issueDate = fields.getOrNull(4)?.trim()?.takeIf { it.isNotBlank() },
+            productSpecification = fields.getOrNull(5)?.trim()?.takeIf { it.isNotBlank() }
+        )
+    }
+
+    private fun decodeBinaryDspm(data: ByteArray): BinaryDspmMetadata {
+        // S-57 DSPM fixed prefix: RCNM(1), RCID(4), HDAT/VDAT/SDAT(1 each),
+        // CSCL(4), DUNI/HUNI/PUNI/COUN(1 each), COMF(4), SOMF(4), then COMT.
+        if (data.size < DSPM_SOMF_OFFSET + 4) return BinaryDspmMetadata()
+        return BinaryDspmMetadata(
+            coordinateMultiplier = data.u32(DSPM_COMF_OFFSET).positiveIntOrNull(),
+            soundingMultiplier = data.u32(DSPM_SOMF_OFFSET).positiveIntOrNull()
+        )
+    }
+
+    private data class BinaryDsidMetadata(
+        val cellName: String? = null,
+        val edition: Int? = null,
+        val updateNumber: Int? = null,
+        val issueDate: String? = null,
+        val updateApplicationDate: String? = null,
+        val productSpecification: String? = null
+    )
+
+    private data class BinaryDspmMetadata(
+        val coordinateMultiplier: Int? = null,
+        val soundingMultiplier: Int? = null
+    )
+
+    private fun ByteArray.terminatedTextFields(startOffset: Int): List<String> {
+        if (startOffset >= size) return emptyList()
+        val result = mutableListOf<String>()
+        var start = startOffset
+        var index = startOffset
+        while (index < size) {
+            val value = this[index]
+            if (value == UNIT_TERMINATOR || value == FIELD_TERMINATOR) {
+                result += copyOfRange(start, index).decodeToString().trimEnd('\u0000')
+                start = index + 1
+                if (value == FIELD_TERMINATOR) return result
+            }
+            index++
+        }
+        if (start <= size) result += copyOfRange(start, size).decodeToString().trimEnd('\u0000')
+        return result
+    }
+
+    private fun looksLikeS57CellName(value: String): Boolean {
+        val trimmed = value.trim()
+        return trimmed.length in 4..16 && trimmed.any { it.isLetter() } && trimmed.all { it.isLetterOrDigit() || it == '_' || it == '-' }
+    }
+
+    private fun Long.positiveIntOrNull(): Int? = takeIf { it > 0L && it <= Int.MAX_VALUE }?.toInt()
 
     private fun mergeMetadata(parts: List<S57DatasetMetadata>): S57DatasetMetadata {
         if (parts.isEmpty()) return S57DatasetMetadata()
@@ -329,6 +398,9 @@ class S57RawDecoder(
     }
 
     private companion object {
+        const val DSID_TEXT_OFFSET: Int = 7
+        const val DSPM_COMF_OFFSET: Int = 16
+        const val DSPM_SOMF_OFFSET: Int = 20
         val UNIT_TERMINATOR: Byte = Iso8211Reader.UNIT_TERMINATOR_BYTE
         val FIELD_TERMINATOR: Byte = Iso8211Reader.FIELD_TERMINATOR_BYTE
     }

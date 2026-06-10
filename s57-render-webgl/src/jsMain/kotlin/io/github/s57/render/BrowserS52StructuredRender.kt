@@ -24,9 +24,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
     if (sourceFeatures.isEmpty()) {
-        return frame.summary().copy(
-            message = "S-52 render skipped: projectedSourceFeatures=0 queried=" + frame.queriedFeatureCount + " adapted=" + frame.adaptedFeatureCount,
-            s52 = S52RenderSummary(failureStage = "projection")
+        val s52 = S52RenderSummary(failureStage = "projection")
+        return geometryFallbackRender(
+            canvasId = canvasId,
+            frame = frame,
+            reason = "S-52 render skipped: projectedSourceFeatures=0 queried=" + frame.queriedFeatureCount + " adapted=" + frame.adaptedFeatureCount,
+            s52 = s52
         )
     }
 

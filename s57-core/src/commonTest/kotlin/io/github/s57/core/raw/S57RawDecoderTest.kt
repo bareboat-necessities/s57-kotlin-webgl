@@ -56,6 +56,26 @@ class S57RawDecoderTest {
     }
 
     @Test
+    fun decodesBinaryDsidAndDspmMetadataFromRealS57Layout() {
+        val bytes = buildRecord(
+            listOf(
+                "DSID" to dsid(cellName = "US5NY1CE", edition = 12, updateNumber = 0, issueDate = "20260101").withFieldTerminator(),
+                "DSPM" to dspm(coordinateMultiplier = 10_000_000, soundingMultiplier = 10).withFieldTerminator()
+            )
+        )
+
+        val dataset = S57RawDecoder().decode(bytes)
+
+        assertEquals("US5NY1CE", dataset.metadata.cellName)
+        assertEquals(12, dataset.metadata.edition)
+        assertEquals(0, dataset.metadata.updateNumber)
+        assertEquals("20260101", dataset.metadata.issueDate)
+        assertEquals("03.1", dataset.metadata.productSpecification)
+        assertEquals(10_000_000, dataset.metadata.coordinateMultiplier)
+        assertEquals(10, dataset.metadata.soundingMultiplier)
+    }
+
+    @Test
     fun countsFeaturesByObjectClassAndBuildsFeatureStubs() {
         val bytes = buildRecord(listOf("FRID" to frid(100, 1, 3, 1, 42, 1, 1).withFieldTerminator())) +
             buildRecord(listOf("FRID" to frid(100, 2, 2, 1, 43, 1, 1).withFieldTerminator())) +
@@ -90,6 +110,34 @@ class S57RawDecoderTest {
 
     private fun vrid(rcnm: Int, rcid: Long, rver: Int, ruin: Int): ByteArray =
         byteArrayOf(rcnm.toByte()) + u32(rcid) + u16(rver) + byteArrayOf(ruin.toByte())
+
+    private fun dsid(cellName: String, edition: Int, updateNumber: Int, issueDate: String): ByteArray =
+        byteArrayOf(10) + u32(1) + byteArrayOf(1, 1) + terminatedTextFields(
+            cellName,
+            edition.toString(),
+            updateNumber.toString(),
+            issueDate,
+            issueDate,
+            "03.1"
+        )
+
+    private fun dspm(coordinateMultiplier: Int, soundingMultiplier: Int): ByteArray =
+        byteArrayOf(10) +
+            u32(1) +
+            byteArrayOf(2, 17, 23) +
+            u32(50_000) +
+            byteArrayOf(1, 1, 1, 1) +
+            u32(coordinateMultiplier.toLong()) +
+            u32(soundingMultiplier.toLong())
+
+    private fun terminatedTextFields(vararg values: String): ByteArray {
+        val out = mutableListOf<Byte>()
+        values.forEachIndexed { index, value ->
+            value.encodeToByteArray().forEach(out::add)
+            if (index != values.lastIndex) out += Iso8211Reader.UNIT_TERMINATOR_BYTE
+        }
+        return out.toByteArray()
+    }
 
     private fun foid(agency: Int, fidn: Long, fids: Int): ByteArray = u16(agency) + u32(fidn) + u16(fids)
 
