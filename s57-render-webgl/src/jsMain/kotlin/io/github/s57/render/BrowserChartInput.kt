@@ -10,67 +10,83 @@ class BrowserChartInput(
 ) {
     fun attach(canvasId: String): Boolean {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement ?: return false
-        canvas.asDynamic().style.touchAction = "none"
+        canvas.setAttribute("style", listOfNotNull(canvas.getAttribute("style"), "touch-action: none").joinToString("; "))
 
         canvas.addEventListener("pointerdown", { raw: Event ->
-            val event = raw.asDynamic()
-            canvas.asDynamic().setPointerCapture(event.pointerId)
-            controller.handlePointer(toChartPointerEvent(event, PointerPhase.Down, canvas))
+            capturePointer(canvas, pointerId(raw))
+            controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Down, canvas))
             raw.preventDefault()
         })
         canvas.addEventListener("pointermove", { raw: Event ->
-            val event = raw.asDynamic()
-            controller.handlePointer(toChartPointerEvent(event, PointerPhase.Move, canvas))
+            controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Move, canvas))
             raw.preventDefault()
         })
         canvas.addEventListener("pointerup", { raw: Event ->
-            val event = raw.asDynamic()
-            controller.handlePointer(toChartPointerEvent(event, PointerPhase.Up, canvas))
+            controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Up, canvas))
             raw.preventDefault()
         })
         canvas.addEventListener("pointercancel", { raw: Event ->
-            val event = raw.asDynamic()
-            controller.handlePointer(toChartPointerEvent(event, PointerPhase.Cancel, canvas))
+            controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Cancel, canvas))
             raw.preventDefault()
         })
-        canvas.asDynamic().addEventListener("wheel", { raw: Event ->
-            val event = raw.asDynamic()
-            val point = canvasPoint(event, canvas)
-            controller.handleWheel(ChartWheelEvent(point, number(event.deltaX), number(event.deltaY), number(event.timeStamp)))
+        canvas.addEventListener("wheel", { raw: Event ->
+            val point = canvasPoint(raw, canvas)
+            controller.handleWheel(ChartWheelEvent(point, eventNumber(raw, "deltaX"), eventNumber(raw, "deltaY"), eventNumber(raw, "timeStamp")))
             raw.preventDefault()
-        }, js("({ passive: false })"))
+        })
         return true
     }
 
-    private fun toChartPointerEvent(event: dynamic, phase: PointerPhase, canvas: HTMLCanvasElement): ChartPointerEvent = ChartPointerEvent(
-        pointerId = integer(event.pointerId),
+    private fun toChartPointerEvent(event: Event, phase: PointerPhase, canvas: HTMLCanvasElement): ChartPointerEvent = ChartPointerEvent(
+        pointerId = pointerId(event),
         phase = phase,
         position = canvasPoint(event, canvas),
-        kind = when ((event.pointerType as? String).orEmpty()) {
+        kind = when (eventString(event, "pointerType")) {
             "mouse" -> PointerKind.Mouse
             "touch" -> PointerKind.Touch
             "pen" -> PointerKind.Pen
             else -> PointerKind.Unknown
         },
-        button = when (integer(event.button, -1)) {
+        button = when (eventInteger(event, "button", -1)) {
             0 -> MouseButton.Primary
             1 -> MouseButton.Middle
             2 -> MouseButton.Secondary
             -1 -> MouseButton.None
             else -> MouseButton.Other
         },
-        timestampMillis = number(event.timeStamp)
+        timestampMillis = eventNumber(event, "timeStamp")
     )
 
-    private fun canvasPoint(event: dynamic, canvas: HTMLCanvasElement): ScreenPoint {
+    private fun canvasPoint(event: Event, canvas: HTMLCanvasElement): ScreenPoint {
         val rect = canvas.getBoundingClientRect()
         return ScreenPoint(
-            x = number(event.clientX) - rect.left,
-            y = number(event.clientY) - rect.top
+            x = eventNumber(event, "clientX") - rect.left,
+            y = eventNumber(event, "clientY") - rect.top
         )
     }
 
-    private fun number(value: dynamic, fallback: Double = 0.0): Double = when (value) {
+    private fun pointerId(event: Event): Int = eventInteger(event, "pointerId")
+
+    private fun capturePointer(canvas: HTMLCanvasElement, pointerId: Int) {
+        canvas.asDynamic().setPointerCapture(pointerId)
+    }
+
+    private fun eventString(event: Event, propertyName: String): String {
+        val value = event.asDynamic()[propertyName]
+        return value as? String ?: ""
+    }
+
+    private fun eventNumber(event: Event, propertyName: String, fallback: Double = 0.0): Double {
+        val value = event.asDynamic()[propertyName]
+        return numberValue(value, fallback)
+    }
+
+    private fun eventInteger(event: Event, propertyName: String, fallback: Int = 0): Int {
+        val value = event.asDynamic()[propertyName]
+        return integerValue(value, fallback)
+    }
+
+    private fun numberValue(value: Any?, fallback: Double = 0.0): Double = when (value) {
         is Double -> value
         is Float -> value.toDouble()
         is Int -> value.toDouble()
@@ -78,7 +94,7 @@ class BrowserChartInput(
         else -> fallback
     }
 
-    private fun integer(value: dynamic, fallback: Int = 0): Int = when (value) {
+    private fun integerValue(value: Any?, fallback: Int = 0): Int = when (value) {
         is Int -> value
         is Double -> value.toInt()
         is Float -> value.toInt()
