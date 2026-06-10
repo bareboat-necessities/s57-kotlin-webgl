@@ -25,7 +25,7 @@ class Phase18RawDecoderLookupTest {
         val bytes = buildRecord(
             listOf(
                 "FRID" to frid(100, 9, 1, 1, 75, 1, 1).withFieldTerminator(),
-                "ATTF" to attributes(187 to "4", 142 to "2.5", 156 to "note", 174 to "10.0").withFieldTerminator()
+                "ATTF" to attributes(187 to "4", 142 to "2.5", 158 to "note", 174 to "10.0").withFieldTerminator()
             )
         )
 
