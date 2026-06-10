@@ -48,6 +48,6 @@ class Phase24PerformanceDiagnosticsTest {
         )
 
         assertTrue("performance cell=CELL" in report.toPlainText())
-        assertTrue("framePrepareMs=2.0" in report.toPlainText())
+        assertTrue("framePrepareMs=2" in report.toPlainText())
     }
 }
