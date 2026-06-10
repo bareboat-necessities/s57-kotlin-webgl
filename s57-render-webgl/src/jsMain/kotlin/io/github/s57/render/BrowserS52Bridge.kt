@@ -53,10 +53,11 @@ internal class BrowserS52Bridge(
 
     private fun S57Feature.toEncFeatures(diagnostics: MutableList<String>): List<EncFeature> {
         val normalizedObject = objectClass.uppercase()
+        val sourceGeometry = geometry
         return when {
-            normalizedObject == "SOUNDG" && geometry is S57Geometry.MultiPoint -> splitSoundingEncFeatures(geometry.points, diagnostics)
-            geometry is S57Geometry.MultiPolygon -> splitMultiPolygonEncFeatures(geometry.polygons, diagnostics)
-            else -> listOfNotNull(toEncFeature(id, geometry, attributes, diagnostics))
+            normalizedObject == "SOUNDG" && sourceGeometry is S57Geometry.MultiPoint -> splitSoundingEncFeatures(sourceGeometry.points, diagnostics)
+            sourceGeometry is S57Geometry.MultiPolygon -> splitMultiPolygonEncFeatures(sourceGeometry.polygons, diagnostics)
+            else -> listOfNotNull(toEncFeature(id, sourceGeometry, attributes, diagnostics))
         }
     }
 
