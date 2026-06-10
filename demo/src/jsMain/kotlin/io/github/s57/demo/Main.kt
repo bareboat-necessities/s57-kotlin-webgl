@@ -25,6 +25,7 @@ import io.github.s57.render.normalizePaletteName
 import io.github.s57.render.pipelineDiagnosticReport
 import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
+import io.github.s57.render.toRenderPipelineDiagnostics
 import io.github.s57.render.toS57ByteArray
 import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
@@ -218,11 +219,17 @@ fun main() {
             adapterDiagnostics = result.frame.adapterDiagnostics.size,
             s52 = summary.s52
         )
+        val pipelineDiagnostics = counters.toRenderPipelineDiagnostics(cell.cellId)
+            .plus(result.diagnostics.toRenderPipelineDiagnostics(cell.cellId))
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
             appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator + " palette=" + request.paletteName)
             appendLine("Phase16 diagnostics:")
             appendLine(counters.toPlainText())
+            if (pipelineDiagnostics.diagnostics.isNotEmpty()) {
+                appendLine("Structured pipeline diagnostics:")
+                appendLine(pipelineDiagnostics.toPlainText())
+            }
             appendLine("S-52 message: " + summary.message)
             val pipelineReport = summary.pipelineDiagnosticReport()
             if (pipelineReport.diagnostics.isNotEmpty()) {

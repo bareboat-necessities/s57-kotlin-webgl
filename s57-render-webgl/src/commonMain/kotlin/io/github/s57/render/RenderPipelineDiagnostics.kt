@@ -1,78 +1,50 @@
 package io.github.s57.render
 
 /**
- * Structured diagnostics that can travel from S-57 import through S-52
- * portrayal and WebGL drawing without reducing failures to free-form strings.
+ * Structured diagnostics that can be threaded through S-57 import, indexing,
+ * S-52 portrayal, and browser/WebGL drawing.
+ *
+ * The model intentionally avoids a JSON dependency so common tests, JVM smoke
+ * tools, and Kotlin/JS browser code can export the same report shape.
  */
 data class RenderPipelineDiagnostic(
     val stage: RenderPipelineStage,
     val severity: RenderPipelineSeverity,
     val code: String,
     val message: String,
-    val cellId: String? = null,
-    val featureId: Long? = null,
-    val recordId: String? = null,
-    val objectClass: String? = null,
-    val primitive: String? = null,
-    val geometryType: String? = null,
-    val attributes: List<String> = emptyList(),
-    val s52Asset: String? = null,
-    val colorToken: String? = null,
-    val fallbackColor: String? = null
-) {
-    fun toPlainText(): String = buildString {
-        append(severity.name.lowercase())
-        append(" stage=").append(stage.id)
-        append(" code=").append(code)
-        cellId?.let { append(" cell=").append(it) }
-        featureId?.let { append(" feature=").append(it) }
-        recordId?.let { append(" record=").append(it) }
-        objectClass?.let { append(" object=").append(it) }
-        primitive?.let { append(" primitive=").append(it) }
-        geometryType?.let { append(" geometry=").append(it) }
-        if (attributes.isNotEmpty()) append(" attributes=").append(attributes.joinToString(","))
-        s52Asset?.let { append(" s52Asset=").append(it) }
-        colorToken?.let { append(" colorToken=").append(it) }
-        fallbackColor?.let { append(" fallbackColor=").append(it) }
-        append(" message=").append(message)
-    }
-
-    fun toJson(): String = buildString {
-        append('{')
-        appendJsonField("stage", stage.id)
-        append(',')
-        appendJsonField("severity", severity.name.lowercase())
-        append(',')
-        appendJsonField("code", code)
-        append(',')
-        appendJsonField("message", message)
-        appendNullableJsonField("cellId", cellId)
-        appendNullableJsonField("featureId", featureId)
-        appendNullableJsonField("recordId", recordId)
-        appendNullableJsonField("objectClass", objectClass)
-        appendNullableJsonField("primitive", primitive)
-        appendNullableJsonField("geometryType", geometryType)
-        append(',')
-        appendJsonArrayField("attributes", attributes)
-        appendNullableJsonField("s52Asset", s52Asset)
-        appendNullableJsonField("colorToken", colorToken)
-        appendNullableJsonField("fallbackColor", fallbackColor)
-        append('}')
-    }
-}
+    val source: RenderPipelineSource = RenderPipelineSource(),
+    val metadata: Map<String, String> = emptyMap()
+)
 
 enum class RenderPipelineStage(val id: String) {
-    Import("import"),
-    Decode("decode"),
+    S57RawDecode("s57-raw-decode"),
+    S57FeatureDecode("s57-feature-decode"),
+    S57Bounds("s57-bounds"),
     Geometry("geometry"),
     Index("index"),
-    Projection("projection"),
+    Query("query"),
     Adapter("adapter"),
+    Projection("projection"),
+    Viewport("viewport"),
+    VisibleGeometry("visible-geometry"),
     S52Portrayal("s52-portrayal"),
-    S52WebGl("s52-webgl"),
+    S52Asset("s52-asset"),
+    S52Color("s52-color"),
     WebGl("webgl"),
-    Demo("demo"),
-    CiSnapshot("ci-snapshot")
+    Artifact("artifact"),
+    Unknown("unknown");
+
+    companion object {
+        fun fromId(id: String): RenderPipelineStage = entries.firstOrNull { it.id == id } ?: when (id) {
+            "raw-decode" -> S57RawDecode
+            "feature-decode" -> S57FeatureDecode
+            "bounds" -> S57Bounds
+            "portrayal" -> S52Portrayal
+            "webgl2" -> WebGl
+            "none" -> Unknown
+            else -> Unknown
+        }
+    }
 }
 
 enum class RenderPipelineSeverity {
@@ -81,23 +53,46 @@ enum class RenderPipelineSeverity {
     Error
 }
 
-data class RenderPipelineDiagnosticReport(
-    val diagnostics: List<RenderPipelineDiagnostic>
-) {
-    val infoCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Info }
-    val warningCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Warning }
-    val errorCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Error }
+data class RenderPipelineSource(
+    val cellId: String? = null,
+    val recordId: String? = null,
+    val featureId: Long? = null,
+    val objectClass: String? = null,
+    val primitive: String? = null,
+    val geometryType: String? = null,
+    val attributes: Map<String, String> = emptyMap()
+)
 
-    fun countByStage(): Map<RenderPipelineStage, Int> = diagnostics.groupingBy { it.stage }.eachCount()
-    fun countByCode(): Map<String, Int> = diagnostics.groupingBy { it.code }.eachCount()
-    fun countByObjectClass(): Map<String, Int> = diagnostics.mapNotNull { it.objectClass }.groupingBy { it }.eachCount()
+data class RenderPipelineDiagnosticReport(
+    val diagnostics: List<RenderPipelineDiagnostic> = emptyList()
+) {
+    val errorCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Error }
+    val warningCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Warning }
+    val infoCount: Int get() = diagnostics.count { it.severity == RenderPipelineSeverity.Info }
+
+    fun countsByStage(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.stage.id }.eachCount())
+    fun countsBySeverity(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.severity.name.lowercase() }.eachCount())
+    fun countsByObjectClass(): Map<String, Int> = sortedCounts(diagnostics.mapNotNull { it.source.objectClass }.groupingBy { it }.eachCount())
+    fun countsByCode(): Map<String, Int> = sortedCounts(diagnostics.groupingBy { it.code }.eachCount())
+
+    fun plus(other: RenderPipelineDiagnosticReport): RenderPipelineDiagnosticReport =
+        RenderPipelineDiagnosticReport(diagnostics + other.diagnostics)
 
     fun toPlainText(): String = buildString {
-        appendLine("renderPipelineDiagnostics total=${diagnostics.size} info=$infoCount warnings=$warningCount errors=$errorCount")
-        if (diagnostics.isNotEmpty()) {
-            appendLine("byStage=" + countByStage().entries.joinToString(",") { it.key.id + ":" + it.value })
-            appendLine("byCode=" + countByCode().entries.joinToString(",") { it.key + ":" + it.value })
-            diagnostics.forEach { appendLine("- " + it.toPlainText()) }
+        appendLine("renderPipelineDiagnostics total=${diagnostics.size} errors=$errorCount warnings=$warningCount infos=$infoCount")
+        appendLine("stages=" + countsByStage().toSummaryText())
+        appendLine("codes=" + countsByCode().toSummaryText())
+        diagnostics.forEach { diagnostic ->
+            append(diagnostic.severity.name.uppercase())
+            append(' ')
+            append(diagnostic.stage.id)
+            append(' ')
+            append(diagnostic.code)
+            diagnostic.source.cellId?.let { append(" cell=").append(it) }
+            diagnostic.source.featureId?.let { append(" feature=").append(it) }
+            diagnostic.source.objectClass?.let { append(" object=").append(it) }
+            append(" - ")
+            appendLine(diagnostic.message)
         }
     }.trimEnd()
 
@@ -105,90 +100,286 @@ data class RenderPipelineDiagnosticReport(
         append('{')
         appendJsonField("total", diagnostics.size)
         append(',')
-        appendJsonField("info", infoCount)
+        appendJsonField("errors", errorCount)
         append(',')
         appendJsonField("warnings", warningCount)
         append(',')
-        appendJsonField("errors", errorCount)
+        appendJsonField("infos", infoCount)
         append(',')
-        append('"').append("byStage").append('"').append(':')
-        appendStringIntMap(countByStage().mapKeys { it.key.id })
+        appendJsonIntObjectField("countsByStage", countsByStage())
         append(',')
-        append('"').append("byCode").append('"').append(':')
-        appendStringIntMap(countByCode())
+        appendJsonIntObjectField("countsBySeverity", countsBySeverity())
         append(',')
-        append('"').append("byObjectClass").append('"').append(':')
-        appendStringIntMap(countByObjectClass())
+        appendJsonIntObjectField("countsByCode", countsByCode())
         append(',')
-        append('"').append("diagnostics").append('"').append(':')
+        appendJsonIntObjectField("countsByObjectClass", countsByObjectClass())
+        append(',')
+        append("\"diagnostics\":")
         append('[')
         diagnostics.forEachIndexed { index, diagnostic ->
             if (index > 0) append(',')
-            append(diagnostic.toJson())
+            appendDiagnosticJson(diagnostic)
         }
         append(']')
         append('}')
     }
 }
 
-fun RenderedFrameSummary.pipelineDiagnosticReport(): RenderPipelineDiagnosticReport =
-    RenderPipelineDiagnosticReport((pipelineDiagnostics + s52.diagnostics).distinct())
-
-private fun StringBuilder.appendNullableJsonField(name: String, value: String?) {
-    if (value != null) {
-        append(',')
-        appendJsonField(name, value)
+fun Phase16Counters.toRenderPipelineDiagnostics(cellId: String? = null): RenderPipelineDiagnosticReport {
+    val diagnostics = mutableListOf<RenderPipelineDiagnostic>()
+    val currentStage = stage()
+    if (currentStage != "none") {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.fromId(currentStage),
+            severity = RenderPipelineSeverity.Error,
+            code = "pipeline-blocked",
+            message = "Render pipeline is blocked at $currentStage",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
     }
-}
-
-private fun StringBuilder.appendNullableJsonField(name: String, value: Long?) {
-    if (value != null) {
-        append(',')
-        appendJsonField(name, value)
+    if (geometryDiagnostics > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.Geometry,
+            severity = RenderPipelineSeverity.Warning,
+            code = "geometry-diagnostics-present",
+            message = "Geometry reconstruction emitted $geometryDiagnostics diagnostics",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
     }
-}
-
-private fun StringBuilder.appendJsonField(name: String, value: String) {
-    append('"').append(jsonEscape(name)).append('"').append(':')
-    append('"').append(jsonEscape(value)).append('"')
-}
-
-private fun StringBuilder.appendJsonField(name: String, value: Int) {
-    append('"').append(jsonEscape(name)).append('"').append(':').append(value)
-}
-
-private fun StringBuilder.appendJsonField(name: String, value: Long) {
-    append('"').append(jsonEscape(name)).append('"').append(':').append(value)
-}
-
-private fun StringBuilder.appendJsonArrayField(name: String, values: List<String>) {
-    append('"').append(jsonEscape(name)).append('"').append(':')
-    append('[')
-    values.forEachIndexed { index, value ->
-        if (index > 0) append(',')
-        append('"').append(jsonEscape(value)).append('"')
+    if (adapterDiagnostics > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.Adapter,
+            severity = RenderPipelineSeverity.Warning,
+            code = "adapter-diagnostics-present",
+            message = "S-57 to S-52 adapter emitted $adapterDiagnostics diagnostics",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
     }
-    append(']')
+    if (s52.diagnosticCount > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.S52Portrayal,
+            severity = RenderPipelineSeverity.Warning,
+            code = "s52-diagnostics-present",
+            message = "S-52 portrayal emitted ${s52.diagnosticCount} diagnostics",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
+    }
+    if (s52.unsupportedObjectClassCount > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.S52Portrayal,
+            severity = RenderPipelineSeverity.Warning,
+            code = "unsupported-object-classes",
+            message = "S-52 portrayal reported ${s52.unsupportedObjectClassCount} unsupported object classes",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
+    }
+    if (s52.unsupportedAttributeCount > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.S52Portrayal,
+            severity = RenderPipelineSeverity.Warning,
+            code = "unsupported-attributes",
+            message = "S-52 portrayal reported ${s52.unsupportedAttributeCount} unsupported attributes",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = phase16Metadata()
+        )
+    }
+    return RenderPipelineDiagnosticReport(diagnostics)
 }
 
-private fun StringBuilder.appendStringIntMap(values: Map<String, Int>) {
+fun RenderedArtifactReport.toRenderPipelineDiagnostics(cellId: String? = null): RenderPipelineDiagnosticReport {
+    val diagnostics = mutableListOf<RenderPipelineDiagnostic>()
+    if (widthPx <= 0 || heightPx <= 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.Artifact,
+            severity = RenderPipelineSeverity.Error,
+            code = "invalid-artifact-dimensions",
+            message = "Rendered artifact has invalid dimensions ${widthPx}x$heightPx",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = artifactMetadata()
+        )
+    }
+    if (featureCount > 0 && onscreenFeatureCount == 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.Viewport,
+            severity = RenderPipelineSeverity.Warning,
+            code = "no-onscreen-features",
+            message = "Rendered artifact has no onscreen features despite $featureCount projected features",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = artifactMetadata()
+        )
+    }
+    if (emptyGeometryCount > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.Geometry,
+            severity = RenderPipelineSeverity.Warning,
+            code = "empty-geometries",
+            message = "Rendered artifact contains $emptyGeometryCount empty geometries",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = artifactMetadata()
+        )
+    }
+    if (fallbackPlaceholderCount > 0) {
+        diagnostics += RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.S52Asset,
+            severity = RenderPipelineSeverity.Warning,
+            code = "fallback-placeholders",
+            message = "Rendered artifact contains $fallbackPlaceholderCount fallback placeholders",
+            source = RenderPipelineSource(cellId = cellId),
+            metadata = artifactMetadata()
+        )
+    }
+    return RenderPipelineDiagnosticReport(diagnostics)
+}
+
+private fun Phase16Counters.phase16Metadata(): Map<String, String> = mapOf(
+    "rawFeatures" to rawFeatures.toString(),
+    "rawVectors" to rawVectors.toString(),
+    "decodedFeatures" to decodedFeatures.toString(),
+    "hasBounds" to hasBounds.toString(),
+    "geometryDiagnostics" to geometryDiagnostics.toString(),
+    "indexedFeatures" to indexedFeatures.toString(),
+    "queriedFeatures" to queriedFeatures.toString(),
+    "adaptedFeatures" to adaptedFeatures.toString(),
+    "projectedFeatures" to projectedFeatures.toString(),
+    "visibleFeatures" to visibleFeatures.toString(),
+    "onscreenFeatures" to onscreenFeatures.toString(),
+    "offscreenFeatures" to offscreenFeatures.toString(),
+    "clippedFeatures" to clippedFeatures.toString(),
+    "emptyGeometry" to emptyGeometry.toString(),
+    "adapterDiagnostics" to adapterDiagnostics.toString(),
+    "s52Profile" to s52.profile,
+    "s52EncFeatures" to s52.encFeatureCount.toString(),
+    "s52Commands" to s52.commandCount.toString(),
+    "s52DrawCalls" to s52.drawCallCount.toString(),
+    "s52Diagnostics" to s52.diagnosticCount.toString(),
+    "unsupportedObjectClasses" to s52.unsupportedObjectClassCount.toString(),
+    "unsupportedAttributes" to s52.unsupportedAttributeCount.toString(),
+    "failureStage" to s52.failureStage
+)
+
+private fun RenderedArtifactReport.artifactMetadata(): Map<String, String> = mapOf(
+    "widthPx" to widthPx.toString(),
+    "heightPx" to heightPx.toString(),
+    "featureCount" to featureCount.toString(),
+    "visibleFeatureCount" to visibleFeatureCount.toString(),
+    "onscreenFeatureCount" to onscreenFeatureCount.toString(),
+    "offscreenFeatureCount" to offscreenFeatureCount.toString(),
+    "clippedFeatureCount" to clippedFeatureCount.toString(),
+    "pointFeatureCount" to pointFeatureCount.toString(),
+    "lineFeatureCount" to lineFeatureCount.toString(),
+    "polygonFeatureCount" to polygonFeatureCount.toString(),
+    "emptyGeometryCount" to emptyGeometryCount.toString(),
+    "centerCrosshairHitCount" to centerCrosshairHitCount.toString(),
+    "depthMeshVertexCount" to depthMeshVertexCount.toString(),
+    "depthMeshTriangleCount" to depthMeshTriangleCount.toString(),
+    "fallbackPlaceholderCount" to fallbackPlaceholderCount.toString()
+)
+
+private fun sortedCounts(counts: Map<String, Int>): Map<String, Int> =
+    counts.entries.sortedBy { it.key }.associate { it.key to it.value }
+
+private fun Map<String, Int>.toSummaryText(): String =
+    if (isEmpty()) "none" else entries.joinToString(",") { (key, value) -> "$key=$value" }
+
+private fun StringBuilder.appendDiagnosticJson(diagnostic: RenderPipelineDiagnostic) {
     append('{')
-    values.entries.sortedBy { it.key }.forEachIndexed { index, entry ->
-        if (index > 0) append(',')
-        appendJsonField(entry.key, entry.value)
+    appendJsonField("stage", diagnostic.stage.id)
+    append(',')
+    appendJsonField("severity", diagnostic.severity.name.lowercase())
+    append(',')
+    appendJsonField("code", diagnostic.code)
+    append(',')
+    appendJsonField("message", diagnostic.message)
+    append(',')
+    append("\"source\":")
+    appendSourceJson(diagnostic.source)
+    append(',')
+    appendJsonObjectField("metadata", diagnostic.metadata)
+    append('}')
+}
+
+private fun StringBuilder.appendSourceJson(source: RenderPipelineSource) {
+    append('{')
+    var needsComma = false
+    fun comma() {
+        if (needsComma) append(',')
+        needsComma = true
+    }
+    source.cellId?.let { comma(); appendJsonField("cellId", it) }
+    source.recordId?.let { comma(); appendJsonField("recordId", it) }
+    source.featureId?.let { comma(); appendJsonField("featureId", it) }
+    source.objectClass?.let { comma(); appendJsonField("objectClass", it) }
+    source.primitive?.let { comma(); appendJsonField("primitive", it) }
+    source.geometryType?.let { comma(); appendJsonField("geometryType", it) }
+    if (source.attributes.isNotEmpty()) {
+        comma()
+        appendJsonObjectField("attributes", source.attributes)
     }
     append('}')
 }
 
-private fun jsonEscape(value: String): String = buildString {
-    value.forEach { ch ->
-        when (ch) {
+private fun StringBuilder.appendJsonObjectField(name: String, values: Map<String, String>) {
+    appendJsonString(name)
+    append(':')
+    appendJsonObject(values)
+}
+
+private fun StringBuilder.appendJsonIntObjectField(name: String, values: Map<String, Int>) {
+    appendJsonString(name)
+    append(':')
+    append('{')
+    values.entries.forEachIndexed { index, (key, value) ->
+        if (index > 0) append(',')
+        appendJsonString(key)
+        append(':')
+        append(value)
+    }
+    append('}')
+}
+
+private fun StringBuilder.appendJsonObject(values: Map<String, String>) {
+    append('{')
+    values.entries.forEachIndexed { index, (key, value) ->
+        if (index > 0) append(',')
+        appendJsonField(key, value)
+    }
+    append('}')
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: String) {
+    appendJsonString(name)
+    append(':')
+    appendJsonString(value)
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: Int) {
+    appendJsonString(name)
+    append(':')
+    append(value)
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: Long) {
+    appendJsonString(name)
+    append(':')
+    append(value)
+}
+
+private fun StringBuilder.appendJsonString(value: String) {
+    append('"')
+    value.forEach { char ->
+        when (char) {
             '\\' -> append("\\\\")
             '"' -> append("\\\"")
             '\n' -> append("\\n")
             '\r' -> append("\\r")
             '\t' -> append("\\t")
-            else -> append(ch)
+            else -> append(char)
         }
     }
+    append('"')
 }
