@@ -13,9 +13,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
 
     if (canvas.getContext("webgl2") == null) {
-        return frame.summary().copy(
-            message = "S-52 WebGL render failed: WebGL2 is not available",
-            s52 = S52RenderSummary(failureStage = "webgl2")
+        val s52 = S52RenderSummary(failureStage = "webgl2")
+        return geometryFallbackRender(
+            canvasId = canvasId,
+            frame = frame,
+            reason = "S-52 WebGL render failed: WebGL2 is not available",
+            s52 = s52
         )
     }
 
@@ -35,9 +38,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     )
 
     if (portrayed.commands.isEmpty()) {
-        return frame.summary().copy(
-            message = "S-52 portrayal produced zero commands: profile=" + portrayed.profile + " encFeatures=" + portrayed.featureCount + " diagnostics=" + portrayed.diagnostics.size,
-            s52 = portrayed.toSummary(failureStage = "portrayal")
+        val s52 = portrayed.toSummary(failureStage = "portrayal")
+        return geometryFallbackRender(
+            canvasId = canvasId,
+            frame = frame,
+            reason = "S-52 portrayal produced zero commands: profile=" + portrayed.profile + " encFeatures=" + portrayed.featureCount + " diagnostics=" + portrayed.diagnostics.size,
+            s52 = s52
         )
     }
 
@@ -49,26 +55,60 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     )
 
     return try {
-        val renderer = WebGlS52Renderer(canvas, bridge.presLib)
-        val stats = renderer.render(portrayed.commands, portrayed.settings, viewport)
-        frame.summary().copy(
-            message = "S-52 WebGL rendered profile=" + portrayed.profile +
-                " encFeatures=" + portrayed.featureCount +
-                " commands=" + portrayed.commands.size +
-                " drawCalls=" + stats.drawCalls +
-                " symbols=" + stats.symbolCount +
-                " lines=" + stats.lineCount +
-                " areas=" + (stats.areaFillCount + stats.areaPatternCount) +
-                " text=" + (stats.textCount + stats.soundingCount) +
-                " diagnostics=" + portrayed.diagnostics.size,
-            s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
-        )
+        var renderer: WebGlS52Renderer? = null
+        renderer = WebGlS52Renderer(canvas, bridge.presLib) {
+            val readyRenderer = renderer ?: return@WebGlS52Renderer
+            try {
+                readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
+            } catch (_: Throwable) {
+                // The initial render path already reports errors. Resource-ready
+                // callbacks must never break the browser event loop.
+            }
+        }
+        val activeRenderer = renderer ?: throw IllegalStateException("S-52 renderer was not initialized")
+        val stats = activeRenderer.render(portrayed.commands, portrayed.settings, viewport)
+        val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
+        val message = "S-52 WebGL rendered profile=" + portrayed.profile +
+            " encFeatures=" + portrayed.featureCount +
+            " commands=" + portrayed.commands.size +
+            " drawCalls=" + stats.drawCalls +
+            " symbols=" + stats.symbolCount +
+            " lines=" + stats.lineCount +
+            " areas=" + (stats.areaFillCount + stats.areaPatternCount) +
+            " text=" + (stats.textCount + stats.soundingCount) +
+            " diagnostics=" + portrayed.diagnostics.size
+        if (s52.needsGeometryFallback(sourceFeatures.size)) {
+            geometryFallbackRender(
+                canvasId = canvasId,
+                frame = frame,
+                reason = message + " but produced no visible draw calls",
+                s52 = s52.copy(failureStage = "zero-drawcalls")
+            )
+        } else {
+            frame.summary().copy(message = message, s52 = s52)
+        }
     } catch (t: Throwable) {
-        frame.summary().copy(
-            message = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
+        val s52 = portrayed.toSummary(failureStage = "webgl-render")
+        geometryFallbackRender(
+            canvasId = canvasId,
+            frame = frame,
+            reason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
                 " encFeatures=" + portrayed.featureCount +
                 " commands=" + portrayed.commands.size,
-            s52 = portrayed.toSummary(failureStage = "webgl-render")
+            s52 = s52
         )
     }
+}
+
+private fun BrowserS57WebGlRenderer.geometryFallbackRender(
+    canvasId: String,
+    frame: StaticChartFrame,
+    reason: String,
+    s52: S52RenderSummary
+): RenderedFrameSummary {
+    val fallback = renderFrame(canvasId, frame)
+    return fallback.copy(
+        message = s52FallbackMessage(reason, fallback.message),
+        s52 = s52
+    )
 }

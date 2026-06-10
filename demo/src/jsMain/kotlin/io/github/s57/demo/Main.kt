@@ -24,13 +24,16 @@ import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
 import io.github.s57.render.renderS52FrameWithSummary
 import io.github.s57.render.toPlainText
+import io.github.s57.render.toS57ByteArray
 import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLPreElement
 import org.w3c.dom.HTMLSelectElement
+import org.khronos.webgl.ArrayBuffer
 import org.w3c.files.File
 import kotlin.math.roundToInt
 
@@ -387,6 +390,58 @@ fun main() {
         }
     }
 
+
+    fun importBundledArrayBuffer(buffer: ArrayBuffer) {
+        if (imports.isNotEmpty() || selectedFiles.isNotEmpty() || cells().isNotEmpty()) return
+        engine.clear()
+        imports = emptyList()
+        failures = emptyList()
+        activeCellId = null
+        activeScaleOverride = null
+        scaleInput.value = ""
+        selectedFiles = emptyList()
+        selectedLabels = listOf("bundled: data/statue-liberty.000")
+        updateFileList()
+        updateCellSummary()
+        importer.importArrayBuffer(buffer).fold(
+            onSuccess = { imported ->
+                imports = listOf(imported)
+                activeCellId = imported.cell.cellId
+                selectedLabels = listOf("bundled: data/statue-liberty.000")
+                updateFileList()
+                updateCellSummary()
+                cacheImportedPayload("statue-liberty.000", buffer.toS57ByteArray(), imported) {
+                    renderActive("bundled NOAA demo")
+                }
+            },
+            onFailure = { error ->
+                failures = failures + ("data/statue-liberty.000: " + (error.message ?: error.toString()))
+                status?.textContent = "Bundled NOAA demo import failed. Use the file picker to load a .000 cell.\n" + importSummary()
+                updateCellSummary()
+            }
+        )
+    }
+
+    fun tryLoadBundledDemo() {
+        val fetchFn = window.asDynamic().fetch
+        if (fetchFn == null) return
+        window.asDynamic().fetch("data/statue-liberty.000").then(
+            { response: dynamic ->
+                if (response != null && response.ok == true) {
+                    response.arrayBuffer().then(
+                        { buffer: dynamic ->
+                            importBundledArrayBuffer(buffer.unsafeCast<ArrayBuffer>())
+                            null
+                        },
+                        { _: dynamic -> null }
+                    )
+                }
+                null
+            },
+            { _: dynamic -> null }
+        )
+    }
+
     fun selectedInputFiles(): List<File> {
         val files = fileInput.files ?: return emptyList()
         val out = mutableListOf<File>()
@@ -489,5 +544,6 @@ fun main() {
 
     updateCellSummary()
     refreshCacheList()
-    status?.textContent = "Phase 23 viewer ready. Import ENC files, restore browser cache, select a cell, choose palette, and adjust scale/zoom."
+    status?.textContent = "Phase 26 viewer ready. Import ENC files, restore browser cache, select a cell, choose palette, and adjust scale/zoom."
+    tryLoadBundledDemo()
 }

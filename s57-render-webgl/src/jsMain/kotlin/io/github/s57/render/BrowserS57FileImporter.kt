@@ -12,17 +12,13 @@ class BrowserS57FileImporter(
     fun importFile(file: File, callback: (Result<S57EngineImportResult>) -> Unit) {
         readFileBytes(file) { result ->
             result.fold(
-                onSuccess = { bytes ->
-                    try {
-                        callback(Result.success(engine.importS57Bytes(bytes)))
-                    } catch (t: Throwable) {
-                        callback(Result.failure(t))
-                    }
-                },
+                onSuccess = { bytes -> callback(importBytes(bytes)) },
                 onFailure = { callback(Result.failure(it)) }
             )
         }
     }
+
+    fun importArrayBuffer(buffer: ArrayBuffer): Result<S57EngineImportResult> = importBytes(buffer.toByteArray())
 
     fun readFileBytes(file: File, callback: (Result<ByteArray>) -> Unit) {
         val reader = FileReader()
@@ -41,19 +37,26 @@ class BrowserS57FileImporter(
         }
         reader.readAsArrayBuffer(file)
     }
+
+    private fun importBytes(bytes: ByteArray): Result<S57EngineImportResult> = try {
+        Result.success(engine.importS57Bytes(bytes))
+    } catch (t: Throwable) {
+        Result.failure(t)
+    }
 }
 
-internal fun ArrayBuffer.toS57ByteArray(): ByteArray = toByteArray()
+fun ArrayBuffer.toS57ByteArray(): ByteArray = toByteArray()
 
 internal fun ByteArray.toInt8Array(): Int8Array {
     val view = Int8Array(size)
-    view.set(toTypedArray())
+    for (index in indices) view[index] = this[index]
     return view
 }
 
-internal fun Int8Array.toByteArray(): ByteArray = unsafeCast<Array<Byte>>().toByteArray()
-
-private fun ArrayBuffer.toByteArray(): ByteArray {
-    val view = Int8Array(this)
-    return view.toByteArray()
+internal fun Int8Array.toByteArray(): ByteArray {
+    val bytes = ByteArray(length)
+    for (index in 0 until length) bytes[index] = this[index]
+    return bytes
 }
+
+private fun ArrayBuffer.toByteArray(): ByteArray = Int8Array(this).toByteArray()

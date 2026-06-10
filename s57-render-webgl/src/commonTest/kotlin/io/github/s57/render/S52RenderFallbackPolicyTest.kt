@@ -1,0 +1,53 @@
+package io.github.s57.render
+
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class S52RenderFallbackPolicyTest {
+    @Test
+    fun usesFallbackWhenS52ClearsCanvasButDrawsNothing() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 4,
+            commandCount = 6,
+            drawCallCount = 0,
+            failureStage = "none"
+        )
+
+        assertTrue(s52.needsGeometryFallback(projectedSourceFeatureCount = 4))
+    }
+
+    @Test
+    fun usesFallbackWhenPortrayalRejectsProjectedFeatures() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 0,
+            commandCount = 0,
+            drawCallCount = 0,
+            failureStage = "portrayal"
+        )
+
+        assertTrue(s52.needsGeometryFallback(projectedSourceFeatureCount = 5))
+    }
+
+    @Test
+    fun doesNotFallbackWhenNoProjectedGeometryExists() {
+        val s52 = S52RenderSummary(commandCount = 0, drawCallCount = 0, failureStage = "projection")
+
+        assertFalse(s52.needsGeometryFallback(projectedSourceFeatureCount = 0))
+    }
+
+    @Test
+    fun doesNotFallbackWhenS52ProducedGpuOutput() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 3,
+            commandCount = 4,
+            drawCallCount = 4,
+            failureStage = "none"
+        )
+
+        assertFalse(s52.needsGeometryFallback(projectedSourceFeatureCount = 3))
+    }
+}
