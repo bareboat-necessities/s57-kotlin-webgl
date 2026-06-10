@@ -12,7 +12,7 @@ class Iso8211ReaderTest {
         val records = Iso8211Reader().readRecords(bytes)
         assertEquals(1, records.size)
         assertEquals(26, records.first().leader.recordLength)
-        assertEquals(24, records.first().leader.baseAddressOfFieldArea)
+        assertEquals(25, records.first().leader.baseAddressOfFieldArea)
         assertTrue(records.first().fields.isEmpty())
     }
 
