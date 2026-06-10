@@ -214,3 +214,18 @@ Adds the first reusable import pipeline from S-57/ENC bytes to a decoded geometr
 - The adapter invokes `S52PortrayalSession` and exposes real `S52DrawCommand` output.
 - The browser renderer exposes `renderS52Frame(...)`, which calls `WebGlS52Renderer` from `s52-kotlin-webgl`.
 - The demo sample render uses the real S-52 WebGL path instead of the earlier debug geometry renderer.
+
+## Phase 26 — full ENC portrayal diagnostics and CI PNG snapshots
+
+Phase 26 is the plan for hardening real ENC rendering so missing symbology,
+wrong colors, dropped objects, geometry problems, and browser/WebGL fallbacks are
+reported instead of silently disappearing. The detailed work plan lives in
+`docs/PHASE26_FULL_ENC_PORTRAYAL_AND_SNAPSHOTS.md`.
+
+Acceptance targets:
+
+- structured diagnostics flow from S-57 import through S-52 portrayal and WebGL drawing;
+- every skipped/degraded object includes stage, severity, feature identity, object class, primitive, attributes, and reason;
+- S-52 symbol, line style, pattern, text, and color fallbacks are counted and exported;
+- the demo can export diagnostics JSON and PNG snapshots;
+- GitHub Actions downloads the first usable public ENC cell, renders it headlessly, and uploads PNG plus diagnostics artifacts.
