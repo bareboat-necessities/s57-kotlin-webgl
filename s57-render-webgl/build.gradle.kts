@@ -12,17 +12,22 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(kotlin("stdlib-common"))
             api(project(":s57-core"))
             api(project(":s57-index"))
             api(project(":s57-s52-adapter"))
         }
         jsMain.dependencies {
+            implementation(kotlin("stdlib-js"))
             implementation("io.github.s52:s52-api:${property("s52.version")}")
             implementation("io.github.s52:s52-core:${property("s52.version")}")
             implementation("io.github.s52:s52-catalog:${property("s52.version")}")
             implementation("io.github.s52:s52-preslib:${property("s52.version")}")
             implementation("io.github.s52:s52-csp:${property("s52.version")}")
             implementation("io.github.s52:s52-render-webgl:${property("s52.version")}")
+        }
+        jvmMain.dependencies {
+            implementation(kotlin("stdlib"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
