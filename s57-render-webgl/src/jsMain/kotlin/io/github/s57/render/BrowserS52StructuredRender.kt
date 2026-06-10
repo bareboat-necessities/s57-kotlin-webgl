@@ -80,12 +80,20 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " areas=" + (stats.areaFillCount + stats.areaPatternCount) +
             " text=" + (stats.textCount + stats.soundingCount) +
             " diagnostics=" + portrayed.diagnostics.size
-        if (s52.needsGeometryFallback(sourceFeatures.size)) {
+        val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
+        val renderedLinearOrAreaDrawCount = stats.lineCount + stats.areaFillCount + stats.areaPatternCount
+        val missingLinearOrAreaOutput = linearOrAreaFeatureCount > 0 && renderedLinearOrAreaDrawCount <= 0
+        if (s52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount) || missingLinearOrAreaOutput) {
+            val stage = when {
+                missingLinearOrAreaOutput -> "point-only-renderer"
+                s52.hasOnlyPointLikeCommands() && linearOrAreaFeatureCount > 0 -> "point-only-portrayal"
+                else -> "zero-drawcalls"
+            }
             geometryFallbackRender(
                 canvasId = canvasId,
                 frame = frame,
-                reason = message + " but produced no visible draw calls",
-                s52 = s52.copy(failureStage = "zero-drawcalls")
+                reason = message + " but source geometry has line/area features=" + linearOrAreaFeatureCount + " and S-52 line/area draw count=" + renderedLinearOrAreaDrawCount,
+                s52 = s52.copy(failureStage = stage)
             )
         } else {
             frame.summary().copy(message = message, s52 = s52)
@@ -114,4 +122,13 @@ private fun BrowserS57WebGlRenderer.geometryFallbackRender(
         message = s52FallbackMessage(reason, fallback.message),
         s52 = s52
     )
+}
+
+private fun StaticChartFrame.projectedLinearOrAreaFeatureCount(): Int = projectedFeatures.count { feature ->
+    when (feature.geometry) {
+        is ProjectedGeometry.LineString,
+        is ProjectedGeometry.Polygon,
+        is ProjectedGeometry.MultiPolygon -> true
+        else -> false
+    }
 }

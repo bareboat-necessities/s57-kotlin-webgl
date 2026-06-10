@@ -80,12 +80,43 @@ class S57GeometryBuilder(
         }
         if (referenced.isEmpty()) return S57Geometry.Empty
 
-        return when (feature.primitive) {
+        return when (feature.effectivePrimitive(referenced, context, diagnostics)) {
             S57Primitive.Point -> pointGeometry(referenced, context)
             S57Primitive.Line -> lineGeometry(referenced, context)
             S57Primitive.Area -> areaGeometry(feature.id, referenced, context, diagnostics)
             S57Primitive.Unknown,
             S57Primitive.None -> lineOrPointFallback(referenced, context)
+        }
+    }
+
+    private fun S57RawFeatureRecord.effectivePrimitive(
+        referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>,
+        context: BuildContext,
+        diagnostics: MutableList<S57GeometryDiagnostic>
+    ): S57Primitive {
+        val hasEdgeReference = referenced.any { (_, vector) -> vector.recordName.recordName == EDGE_RECORD_NAME }
+        if (!hasEdgeReference) return primitive
+
+        val shouldInfer = primitive == S57Primitive.Point || primitive == S57Primitive.Unknown || primitive == S57Primitive.None
+        if (!shouldInfer) return primitive
+
+        val inferred = if (objectClassAcronym in EDGE_AREA_OBJECT_CLASSES || referenced.formsClosedEdgeChain(context)) {
+            S57Primitive.Area
+        } else {
+            S57Primitive.Line
+        }
+        diagnostics += S57GeometryDiagnostic(
+            id,
+            S57GeometryDiagnosticSeverity.Warning,
+            "Corrected primitive ${primitive.name} to ${inferred.name} because feature references edge vector(s)"
+        )
+        return inferred
+    }
+
+    private fun List<Pair<S57SpatialReference, S57RawVectorRecord>>.formsClosedEdgeChain(context: BuildContext): Boolean {
+        val segments = map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }
+        return stitchSegments(segments, closeRing = false).any { chain ->
+            chain.size >= 4 && chain.first() == chain.last()
         }
     }
 
@@ -230,6 +261,16 @@ class S57GeometryBuilder(
         const val DEFAULT_COMF: Int = 10_000_000
         const val DEFAULT_SOMF: Int = 10
         const val ORIENTATION_REVERSE: Int = 2
+        private const val EDGE_RECORD_NAME: Int = 130
+
+        private val EDGE_AREA_OBJECT_CLASSES: Set<String> = setOf(
+            "ACHARE", "ADMARE", "AIRARE", "CBLARE", "CONZNE", "COSARE", "CTNARE",
+            "DEPARE", "DMPGRD", "DOCARE", "DRGARE", "DWRTCL", "EXEZNE", "FAIRWY",
+            "FSHGRD", "FSHZNE", "HRBARE", "ICNARE", "ISTZNE", "LAKARE", "LNDARE",
+            "MIPARE", "OSPARE", "PIPARE", "PRCARE", "PRDARE", "RESARE", "SBDARE",
+            "SEAARE", "SPLARE", "TESARE", "TSEZNE", "TSSCRS", "TSSRON", "TSSLPT",
+            "TSSBND", "UNSARE"
+        )
     }
 }
 

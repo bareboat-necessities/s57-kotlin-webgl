@@ -6,12 +6,25 @@ package io.github.s57.render
  * produces no GPU output. This small common policy keeps that decision testable
  * without depending on browser WebGL APIs.
  */
-fun S52RenderSummary.needsGeometryFallback(projectedSourceFeatureCount: Int): Boolean {
+fun S52RenderSummary.needsGeometryFallback(projectedSourceFeatureCount: Int): Boolean =
+    needsGeometryFallback(projectedSourceFeatureCount = projectedSourceFeatureCount, projectedLinearOrAreaFeatureCount = 0)
+
+fun S52RenderSummary.needsGeometryFallback(
+    projectedSourceFeatureCount: Int,
+    projectedLinearOrAreaFeatureCount: Int
+): Boolean {
     if (projectedSourceFeatureCount <= 0) return false
     if (failureStage != "none") return true
     if (commandCount <= 0) return true
     if (drawCallCount <= 0) return true
+    if (projectedLinearOrAreaFeatureCount > 0 && hasOnlyPointLikeCommands()) return true
     return false
+}
+
+fun S52RenderSummary.hasOnlyPointLikeCommands(): Boolean {
+    if (commandCount <= 0) return false
+    if (areaCommandCount > 0 || lineCommandCount > 0) return false
+    return symbolCommandCount + textCommandCount + soundingCommandCount >= commandCount
 }
 
 fun s52FallbackMessage(reason: String, fallbackMessage: String): String =

@@ -70,6 +70,55 @@ class Phase17GeometryBuilderTest {
         assertEquals(12.3, valsou.value)
     }
 
+
+    @Test
+    fun correctsPointPrimitiveWhenFeatureReferencesClosedEdgeGeometry() {
+        val raw = S57RawDataset(
+            metadata = S57DatasetMetadata(cellName = "US5EDGE", coordinateMultiplier = 10_000_000),
+            vectors = listOf(
+                node(1, -74.0, 40.0),
+                node(2, -73.9, 40.0),
+                node(3, -73.9, 40.1),
+                node(4, -74.0, 40.1),
+                edge(10, 1, 2),
+                edge(11, 2, 3),
+                edge(12, 3, 4),
+                edge(13, 4, 1)
+            ),
+            features = listOf(
+                areaFeature(300, listOf(10, 11, 12, 13)).copy(primitive = S57Primitive.Point)
+            ),
+            unknownRecords = emptyList()
+        )
+
+        val result = S57GeometryBuilder().build(raw)
+
+        assertTrue(result.features.single().geometry is S57Geometry.Polygon)
+        assertTrue(result.diagnostics.any { "Corrected primitive Point to Area" in it.message })
+        assertEquals(0, result.report().pointCount)
+    }
+
+    @Test
+    fun correctsPointPrimitiveWhenFeatureReferencesOpenEdgeGeometry() {
+        val raw = S57RawDataset(
+            metadata = S57DatasetMetadata(cellName = "US5EDGE", coordinateMultiplier = 10_000_000),
+            vectors = listOf(
+                node(1, -74.0, 40.0),
+                node(2, -73.9, 40.0),
+                edge(10, 1, 2)
+            ),
+            features = listOf(
+                pointFeature(301, "DEPCNT", 10).copy(primitive = S57Primitive.Point, spatialReferences = listOf(S57SpatialReference(S57RecordName(130, 10), orientation = 1, usage = 1, mask = 255)))
+            ),
+            unknownRecords = emptyList()
+        )
+
+        val result = S57GeometryBuilder().build(raw)
+
+        assertTrue(result.features.single().geometry is S57Geometry.LineString)
+        assertTrue(result.diagnostics.any { "Corrected primitive Point to Line" in it.message })
+    }
+
     private fun rawPoint(lon: Double, lat: Double, zRaw: Long? = null): S57RawCoordinate = S57RawCoordinate(
         yRaw = (lat * 10_000_000).toLong(),
         xRaw = (lon * 10_000_000).toLong(),
