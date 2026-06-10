@@ -46,3 +46,12 @@ jobs:
           echo "Using S52 source composite build at $S52_SOURCE_DIR"
       - name: Build Phase 25
         run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build :demo:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
+      - name: Package NOAA Statue of Liberty browser demo
+        shell: bash
+        run: bash .github/scripts/package-noaa-demo-artifact.sh
+      - name: Upload NOAA Statue of Liberty browser demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: noaa-statue-liberty-s57-webgl-demo
+          path: build/noaa-statue-liberty-demo.zip
+          if-no-files-found: error
