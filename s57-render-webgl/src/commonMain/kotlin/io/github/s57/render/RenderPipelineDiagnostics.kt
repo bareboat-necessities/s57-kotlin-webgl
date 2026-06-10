@@ -112,7 +112,7 @@ data class RenderPipelineDiagnosticReport(
             append("context")
             cellId?.let { append(" cell=").append(it) }
             palette?.let { append(" palette=").append(it) }
-            scaleDenominator?.let { append(" scale=").append(it) }
+            scaleDenominator?.let { append(" scale=").appendJsonNumber(it) }
             appendLine()
         }
         if (counters.isNotEmpty()) appendLine("counters=" + sortedCounts(counters).toSummaryText())
@@ -510,7 +510,12 @@ private fun StringBuilder.appendJsonNullableStringField(name: String, value: Str
 private fun StringBuilder.appendJsonNullableDoubleField(name: String, value: Double?) {
     appendJsonString(name)
     append(':')
-    if (value == null) append("null") else append(value)
+    if (value == null) append("null") else appendJsonNumber(value)
+}
+
+private fun StringBuilder.appendJsonNumber(value: Double) {
+    val text = value.toString()
+    append(if ('.' in text || 'e' in text || 'E' in text) text else "$text.0")
 }
 
 private fun StringBuilder.appendJsonObjectField(name: String, values: Map<String, String>) {
