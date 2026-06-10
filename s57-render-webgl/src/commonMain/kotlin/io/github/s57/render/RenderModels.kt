@@ -39,7 +39,11 @@ data class S52RenderSummary(
     val diagnosticCount: Int = 0,
     val unsupportedObjectClassCount: Int = 0,
     val unsupportedAttributeCount: Int = 0,
-    val failureStage: String = "none"
+    val missingSymbolCount: Int = 0,
+    val missingColorTokenCount: Int = 0,
+    val fallbackColorCount: Int = 0,
+    val failureStage: String = "none",
+    val diagnostics: List<RenderPipelineDiagnostic> = emptyList()
 ) {
     val hasCommands: Boolean get() = commandCount > 0
     val hasDrawCalls: Boolean get() = drawCallCount > 0
@@ -52,5 +56,6 @@ data class RenderedFrameSummary(
     val camera: ChartCameraState? = null,
     val centerCrosshairHits: List<ChartHitResult> = emptyList(),
     val depthMeshEnabled: Boolean = false,
-    val s52: S52RenderSummary = S52RenderSummary()
+    val s52: S52RenderSummary = S52RenderSummary(),
+    val pipelineDiagnostics: List<RenderPipelineDiagnostic> = emptyList()
 )

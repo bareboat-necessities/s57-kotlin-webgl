@@ -3,6 +3,7 @@ package io.github.s57.render
 import io.github.s52.render.webgl.RenderViewport
 import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
+import kotlin.js.console
 import org.w3c.dom.HTMLCanvasElement
 
 fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
@@ -39,6 +40,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         paletteName = frame.request.paletteName,
         scaleDenominator = frame.request.scaleDenominator
     )
+    portrayed.diagnostics.logRenderDiagnosticsToConsole()
 
     if (portrayed.commands.isEmpty()) {
         val s52 = portrayed.toSummary(failureStage = "portrayal")
@@ -102,9 +104,9 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         } else {
             if (s52.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
                 val overlay = renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = false)
-                frame.summary().copy(message = message + "; " + overlay.message, s52 = s52)
+                frame.summary().copy(message = message + "; " + overlay.message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
             } else {
-                frame.summary().copy(message = message, s52 = s52)
+                frame.summary().copy(message = message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
             }
         }
     } catch (t: Throwable) {
@@ -127,10 +129,32 @@ private fun BrowserS57WebGlRenderer.geometryFallbackRender(
     s52: S52RenderSummary
 ): RenderedFrameSummary {
     val fallback = renderFrame(canvasId, frame)
+    val fallbackDiagnostic = RenderPipelineDiagnostic(
+        stage = if (s52.failureStage == "portrayal") RenderPipelineStage.S52Portrayal else RenderPipelineStage.S52WebGl,
+        severity = RenderPipelineSeverity.Warning,
+        code = "s52.geometry_fallback",
+        message = reason,
+        cellId = frame.request.cellId
+    )
+    fallbackDiagnostic.logRenderDiagnosticToConsole()
+    val diagnostics = s52.diagnostics + fallbackDiagnostic
     return fallback.copy(
         message = s52FallbackMessage(reason, fallback.message),
-        s52 = s52
+        s52 = s52.copy(diagnostics = diagnostics, diagnosticCount = diagnostics.size),
+        pipelineDiagnostics = fallback.pipelineDiagnostics + diagnostics
     )
+}
+
+private fun List<RenderPipelineDiagnostic>.logRenderDiagnosticsToConsole() {
+    forEach { it.logRenderDiagnosticToConsole() }
+}
+
+private fun RenderPipelineDiagnostic.logRenderDiagnosticToConsole() {
+    when (severity) {
+        RenderPipelineSeverity.Error -> console.error(toPlainText())
+        RenderPipelineSeverity.Warning -> console.warn(toPlainText())
+        RenderPipelineSeverity.Info -> Unit
+    }
 }
 
 private fun StaticChartFrame.projectedLinearOrAreaFeatureCount(): Int = projectedFeatures.count { feature ->
