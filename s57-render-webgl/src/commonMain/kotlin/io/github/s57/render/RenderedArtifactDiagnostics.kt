@@ -75,7 +75,7 @@ fun renderedArtifactSvgSnapshot(frame: StaticChartFrame, includeLabels: Boolean 
     val height = frame.request.heightPx.coerceAtLeast(1)
     appendLine("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"$width\" height=\"$height\" viewBox=\"0 0 $width $height\" role=\"img\" aria-label=\"s57 rendered artifact snapshot\">")
     appendLine("  <rect width=\"100%\" height=\"100%\" fill=\"#dceefa\"/>")
-    for (feature in frame.projectedFeatures) appendFeature(feature, includeLabels)
+    for (feature in frame.projectedFeatures.sortedForChartReadability()) appendFeature(feature, includeLabels)
     if (frame.request.centerCrosshair.enabled) {
         val cx = width / 2.0
         val cy = height / 2.0
@@ -121,15 +121,22 @@ private fun StringBuilder.appendPolygon(rings: List<List<ScreenPoint>>, feature:
 private fun List<ScreenPoint>.toSvgPoints(): String = joinToString(" ") { "${it.x},${it.y}" }
 
 private fun colorFor(objectClass: String): String = when (objectClass.uppercase()) {
-    "DEPCNT" -> "#0040a0"
-    "SOUNDG" -> "#000000"
-    "BOYLAT", "BCNLAT", "LIGHTS" -> "#d02020"
+    "DEPCNT" -> "#215a8f"
+    "COALNE", "SLOTOP" -> "#47331f"
+    "SOUNDG" -> "#1f2933"
+    "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB",
+    "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD", "LIGHTS" -> "#c0162d"
     "WRECKS", "OBSTRN" -> "#5f2020"
+    "CBLARE", "CBLOHD", "CBLSUB", "PIPARE", "PIPOHD", "PIPSOL" -> "#8b3fb0"
     else -> "#14303d"
 }
 
 private fun fillFor(objectClass: String): String = when (objectClass.uppercase()) {
-    "DEPARE" -> "#b2e0f4"
+    "DEPARE", "DRGARE", "SEAARE", "UNSARE" -> "#b7dff0"
+    "LNDARE" -> "#ead9b7"
+    "LAKARE", "RIVERS" -> "#9fd6ec"
+    "FAIRWY", "ACHARE" -> "#d8f0f6"
+    "RESARE", "CBLARE", "PIPARE" -> "#ead8f3"
     else -> "#c8d8c8"
 }
 

@@ -105,7 +105,7 @@ class BrowserS57WebGlRenderer(
         includeSoundingPointGlyphs: Boolean
     ): GeometryDrawCounts {
         val counts = GeometryDrawCounts()
-        for (feature in frame.projectedFeatures) {
+        for (feature in frame.projectedFeatures.sortedForChartReadability()) {
             when (val geometry = feature.geometry) {
                 is ProjectedGeometry.Empty -> Unit
                 is ProjectedGeometry.Point -> {
@@ -122,7 +122,7 @@ class BrowserS57WebGlRenderer(
                 }
                 is ProjectedGeometry.LineString -> {
                     if (geometry.points.size >= 2) {
-                        program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass))
+                        program.drawLineStrip(geometry.points, canvas, colorFor(feature.objectClass), lineWidthFor(feature.objectClass))
                         counts.lines++
                     }
                 }
@@ -147,7 +147,7 @@ class BrowserS57WebGlRenderer(
         if (outer.size < 3) return false
         program.drawTriangleFan(outer, canvas, fillColorFor(objectClass))
         polygon.rings.forEach { ring ->
-            if (ring.size >= 2) program.drawLineStrip(ring.closedForStroke(), canvas, colorFor(objectClass))
+            if (ring.size >= 2) program.drawLineStrip(ring.closedForStroke(), canvas, colorFor(objectClass), lineWidthFor(objectClass))
         }
         return true
     }
@@ -162,7 +162,20 @@ class BrowserS57WebGlRenderer(
         objectClass: String,
         color: FloatArray
     ) {
-        val size = if (objectClass.uppercase() == "SOUNDG") 3.0 else 5.5
+        val size = if (objectClass.uppercase() == "SOUNDG") 3.0 else 6.5
+        val halo = floatArrayOf(1.0f, 1.0f, 1.0f, 0.9f)
+        if (objectClass.uppercase() != "SOUNDG") drawPointGlyphShape(program, point, canvas, objectClass, halo, size + 2.0)
+        drawPointGlyphShape(program, point, canvas, objectClass, color, size)
+    }
+
+    private fun drawPointGlyphShape(
+        program: BrowserSimpleColorProgram,
+        point: ScreenPoint,
+        canvas: HTMLCanvasElement,
+        objectClass: String,
+        color: FloatArray,
+        size: Double
+    ) {
         when (objectClass.uppercase()) {
             "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB" -> {
                 program.drawLineStrip(
@@ -215,16 +228,30 @@ class BrowserS57WebGlRenderer(
     }
 
     private fun colorFor(objectClass: String): FloatArray = when (objectClass.uppercase()) {
-        "DEPCNT" -> floatArrayOf(0.0f, 0.25f, 0.65f, 1.0f)
-        "SOUNDG" -> floatArrayOf(0.0f, 0.0f, 0.0f, 1.0f)
-        "BOYLAT", "BCNLAT", "LIGHTS" -> floatArrayOf(0.85f, 0.1f, 0.05f, 1.0f)
+        "DEPCNT" -> floatArrayOf(0.13f, 0.35f, 0.56f, 1.0f)
+        "COALNE", "SLOTOP" -> floatArrayOf(0.28f, 0.20f, 0.12f, 1.0f)
+        "SOUNDG" -> floatArrayOf(0.12f, 0.16f, 0.20f, 0.95f)
+        "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB",
+        "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD", "LIGHTS" -> floatArrayOf(0.85f, 0.1f, 0.05f, 1.0f)
         "WRECKS", "OBSTRN" -> floatArrayOf(0.45f, 0.1f, 0.1f, 1.0f)
+        "CBLARE", "CBLOHD", "CBLSUB", "PIPARE", "PIPOHD", "PIPSOL" -> floatArrayOf(0.55f, 0.25f, 0.70f, 0.9f)
         else -> floatArrayOf(0.05f, 0.18f, 0.24f, 1.0f)
     }
 
     private fun fillColorFor(objectClass: String): FloatArray = when (objectClass.uppercase()) {
-        "DEPARE" -> floatArrayOf(0.70f, 0.88f, 0.96f, 0.65f)
+        "DEPARE", "DRGARE", "SEAARE", "UNSARE" -> floatArrayOf(0.72f, 0.87f, 0.94f, 0.62f)
+        "LNDARE" -> floatArrayOf(0.92f, 0.85f, 0.70f, 0.86f)
+        "LAKARE", "RIVERS" -> floatArrayOf(0.62f, 0.84f, 0.92f, 0.75f)
+        "FAIRWY", "ACHARE" -> floatArrayOf(0.84f, 0.94f, 0.97f, 0.55f)
+        "RESARE", "CBLARE", "PIPARE" -> floatArrayOf(0.92f, 0.84f, 0.95f, 0.35f)
         else -> floatArrayOf(0.78f, 0.86f, 0.80f, 0.45f)
+    }
+
+    private fun lineWidthFor(objectClass: String): Double = when (objectClass.uppercase()) {
+        "COALNE", "SLOTOP" -> 2.5
+        "DEPCNT" -> 1.4
+        "CBLARE", "CBLOHD", "CBLSUB", "PIPARE", "PIPOHD", "PIPSOL" -> 1.2
+        else -> 1.8
     }
 }
 
@@ -253,14 +280,14 @@ private class BrowserSimpleColorProgram(
     }
 
     fun drawPoints(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) = draw(WebGLRenderingContext.POINTS, points, canvas, color)
-    fun drawLineStrip(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) = draw(WebGLRenderingContext.LINE_STRIP, points, canvas, color)
+    fun drawLineStrip(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray, lineWidth: Double = 1.0) = draw(WebGLRenderingContext.LINE_STRIP, points, canvas, color, lineWidth)
 
     fun drawTriangleFan(points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
         if (points.size < 3) return
         draw(WebGLRenderingContext.TRIANGLE_FAN, points, canvas, color)
     }
 
-    private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray) {
+    private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray, lineWidth: Double = 1.0) {
         if (points.isEmpty()) return
         val dataValues = Array(points.size * 2) { 0.0f }
         points.forEachIndexed { index, point ->
@@ -271,6 +298,7 @@ private class BrowserSimpleColorProgram(
         data.set(dataValues)
         gl.bufferData(WebGLRenderingContext.ARRAY_BUFFER, data, WebGLRenderingContext.STREAM_DRAW)
         gl.uniform4f(colorLocation, color[0], color[1], color[2], color[3])
+        if (mode == WebGLRenderingContext.LINE_STRIP) gl.lineWidth(lineWidth.toFloat())
         gl.drawArrays(mode, 0, points.size)
     }
 }
