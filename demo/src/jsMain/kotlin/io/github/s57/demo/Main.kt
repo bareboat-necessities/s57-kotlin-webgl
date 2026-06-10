@@ -64,9 +64,12 @@ fun main() {
     clearCacheButton.textContent = "Clear browser cache"
     val diagnosticsJsonButton = document.createElement("button") as HTMLButtonElement
     diagnosticsJsonButton.textContent = "Download diagnostics JSON"
+    val canvasPngButton = document.createElement("button") as HTMLButtonElement
+    canvasPngButton.textContent = "Download canvas PNG"
     sampleButton.parentElement?.appendChild(restoreCacheButton)
     sampleButton.parentElement?.appendChild(clearCacheButton)
     sampleButton.parentElement?.appendChild(diagnosticsJsonButton)
+    sampleButton.parentElement?.appendChild(canvasPngButton)
 
     val cacheHeading = document.createElement("h3")
     cacheHeading.textContent = "Cached cells"
@@ -103,15 +106,19 @@ fun main() {
         window.asDynamic().s57Phase26Report = { JSON.parse<dynamic>(latestPipelineReport.toJson()) }
     }
 
-    fun downloadTextFile(fileName: String, mimeType: String, text: String) {
-        val blob = js("new Blob([text], { type: mimeType })")
-        val url = js("URL.createObjectURL(blob)")
+    fun downloadUrl(fileName: String, url: String) {
         val anchor = document.createElement("a")
-        anchor.setAttribute("href", url.unsafeCast<String>())
+        anchor.setAttribute("href", url)
         anchor.setAttribute("download", fileName)
         document.body?.appendChild(anchor)
         anchor.asDynamic().click()
         anchor.parentNode?.removeChild(anchor)
+    }
+
+    fun downloadTextFile(fileName: String, mimeType: String, text: String) {
+        val blob = js("new Blob([text], { type: mimeType })")
+        val url = js("URL.createObjectURL(blob)")
+        downloadUrl(fileName, url.unsafeCast<String>())
         js("URL.revokeObjectURL(url)")
     }
 
@@ -582,6 +589,11 @@ fun main() {
             mimeType = "application/json",
             text = latestPipelineReport.toJson()
         )
+        null
+    }
+
+    canvasPngButton.onclick = {
+        downloadUrl("s57-phase26-render.png", canvas.toDataURL("image/png"))
         null
     }
 

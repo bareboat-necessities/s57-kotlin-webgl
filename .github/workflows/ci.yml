@@ -19,6 +19,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/ci-render-snapshot/package-lock.json
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
@@ -49,6 +54,18 @@ jobs:
       - name: Package NOAA Statue of Liberty browser demo
         shell: bash
         run: bash .github/scripts/package-noaa-demo-artifact.sh
+      - name: Generate Phase 26 ENC render snapshot
+        shell: bash
+        run: bash .github/scripts/run-ci-enc-snapshot.sh
+      - name: Upload Phase 26 ENC render snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: enc-render-snapshot
+          path: |
+            build/ci-enc-snapshot/render.png
+            build/ci-enc-snapshot/diagnostics.json
+            build/ci-enc-snapshot/summary.txt
+          if-no-files-found: error
       - name: Upload NOAA Statue of Liberty browser demo
         uses: actions/upload-artifact@v4
         with:

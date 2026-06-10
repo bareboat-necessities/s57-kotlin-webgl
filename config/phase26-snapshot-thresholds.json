@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "mode": "warning-only",
+  "warningOnlyLimits": {
+    "missingSymbols": 0,
+    "missingColorTokens": 0,
+    "fallbackColors": 0,
+    "fallbackPlaceholderCount": 0,
+    "unsupportedObjectClasses": 0
+  }
+}
