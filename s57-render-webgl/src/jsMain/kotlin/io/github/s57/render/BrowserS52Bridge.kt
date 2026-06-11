@@ -4,6 +4,7 @@ import io.github.s52.api.S52PortrayalRequest
 import io.github.s52.api.S52PortrayalSession
 import io.github.s52.catalog.PrimitiveType
 import io.github.s52.catalog.S57Attribute
+import io.github.s52.catalog.S57AttributeValueKind
 import io.github.s52.catalog.S57ObjectClass
 import io.github.s52.core.draw.S52DrawCommand
 import io.github.s52.core.geometry.Coordinate
@@ -183,7 +184,7 @@ internal class BrowserS52Bridge(
                     message = "feature=$featureId ignored unsupported attribute=$name"
                 )
             } else {
-                pairs += attr to value.rawToS52Value(name)
+                pairs += attr to value.rawToS52Value(attr)
             }
         }
         return S57Attributes.of(*pairs.toTypedArray())
@@ -288,24 +289,61 @@ private fun S57Geometry.diagnosticGeometryType(): String = when (this) {
 
 private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
 
-private fun S57Value.rawToS52Value(attributeName: String? = null): S52Value = when (this) {
+private fun S57Value.rawToS52Value(attribute: S57Attribute): S52Value = when (this) {
     S57Value.Empty -> S52Value.Empty
-    is S57Value.Text -> value.textToS52Value(attributeName)
-    is S57Value.Integer -> S52Value.Integer(value)
-    is S57Value.Decimal -> S52Value.Decimal(value)
-    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawToS52Value(attributeName) })
+    is S57Value.Text -> value.textToS52Value(attribute)
+    is S57Value.Integer -> when (attribute.valueKind) {
+        S57AttributeValueKind.Decimal -> S52Value.Decimal(value.toDouble())
+        S57AttributeValueKind.EnumerationList -> S52Value.ListValue(listOf(S52Value.Integer(value)))
+        else -> S52Value.Integer(value)
+    }
+    is S57Value.Decimal -> when (attribute.valueKind) {
+        S57AttributeValueKind.Integer,
+        S57AttributeValueKind.Enumeration -> S52Value.Integer(value.toInt())
+        S57AttributeValueKind.EnumerationList -> S52Value.ListValue(listOf(S52Value.Integer(value.toInt())))
+        else -> S52Value.Decimal(value)
+    }
+    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawListElementToS52Value(attribute) })
 }
 
-private fun String.textToS52Value(attributeName: String?): S52Value {
-    val trimmed = trim()
-    if (attributeName in NUMERIC_DECIMAL_ATTRIBUTES) trimmed.toDoubleOrNull()?.let { return S52Value.Decimal(it) }
-    if (attributeName in NUMERIC_INTEGER_ATTRIBUTES) trimmed.toIntOrNull()?.let { return S52Value.Integer(it) }
-    return S52Value.Text(this)
+private fun S57Value.rawListElementToS52Value(attribute: S57Attribute): S52Value = when (this) {
+    S57Value.Empty -> S52Value.Empty
+    is S57Value.Text -> value.textToS52ListElement(attribute)
+    is S57Value.Integer -> if (attribute.valueKind == S57AttributeValueKind.Decimal) S52Value.Decimal(value.toDouble()) else S52Value.Integer(value)
+    is S57Value.Decimal -> if (attribute.valueKind == S57AttributeValueKind.Decimal) S52Value.Decimal(value) else S52Value.Integer(value.toInt())
+    is S57Value.ListValue -> S52Value.ListValue(values.map { it.rawListElementToS52Value(attribute) })
 }
+
+private fun String.textToS52Value(attribute: S57Attribute): S52Value {
+    val trimmed = trim()
+    if (trimmed.isEmpty()) return S52Value.Text(this)
+    return when (attribute.valueKind) {
+        S57AttributeValueKind.Decimal -> trimmed.toDoubleOrNull()?.let(S52Value::Decimal) ?: S52Value.Text(this)
+        S57AttributeValueKind.Integer -> trimmed.toIntOrNull()?.let(S52Value::Integer) ?: S52Value.Text(this)
+        S57AttributeValueKind.Enumeration -> trimmed.toIntOrNull()?.let(S52Value::Integer) ?: S52Value.Text(this)
+        S57AttributeValueKind.EnumerationList -> {
+            val values = splitNumericListTokens().mapNotNull { it.toIntOrNull()?.let(S52Value::Integer) }
+            if (values.isNotEmpty()) S52Value.ListValue(values) else S52Value.Text(this)
+        }
+        S57AttributeValueKind.Text,
+        S57AttributeValueKind.Unknown -> S52Value.Text(this)
+    }
+}
+
+private fun String.textToS52ListElement(attribute: S57Attribute): S52Value {
+    val trimmed = trim()
+    return when (attribute.valueKind) {
+        S57AttributeValueKind.Decimal -> trimmed.toDoubleOrNull()?.let(S52Value::Decimal) ?: S52Value.Text(this)
+        else -> trimmed.toIntOrNull()?.let(S52Value::Integer) ?: S52Value.Text(this)
+    }
+}
+
+private fun String.splitNumericListTokens(): List<String> =
+    split(',', ';', '|', '\u001f', '\u001e').map { it.trim() }.filter { it.isNotEmpty() }
 
 private fun S57Value.splitListValues(): List<S57Value> = when (this) {
     is S57Value.ListValue -> values
-    is S57Value.Text -> value.split(',', ';', '|').mapNotNull { token -> token.trim().takeIf { it.isNotEmpty() }?.let(S57Value::Text) }
+    is S57Value.Text -> value.splitNumericListTokens().map(S57Value::Text)
     else -> listOf(this)
 }
 
@@ -320,9 +358,6 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
 private fun s52ObjectClass(acronym: String): S57ObjectClass? = S57ObjectClass.fromAcronym(acronym)
 
 private fun s52Attribute(acronym: String): S57Attribute? = S57Attribute.fromAcronym(acronym)
-
-private val NUMERIC_DECIMAL_ATTRIBUTES = setOf("DRVAL1", "DRVAL2", "HEIGHT", "VALDCO", "VALSOU")
-private val NUMERIC_INTEGER_ATTRIBUTES = setOf("CATOBS", "CATLAM", "CATREA", "CATWRK", "COLOUR", "COLPAT", "LITCHR", "SCAMIN", "SCAMAX", "SIGGRP", "WATLEV")
 
 private fun browserS52Settings(
     paletteName: String,

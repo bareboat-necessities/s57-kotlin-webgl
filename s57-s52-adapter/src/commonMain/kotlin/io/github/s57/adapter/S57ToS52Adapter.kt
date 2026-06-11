@@ -154,22 +154,60 @@ private fun S57Geometry.toPortrayalGeometry(
 private fun S57Value.toPortrayalValue(attributeName: String? = null): S57PortrayalValue = when (this) {
     S57Value.Empty -> S57PortrayalValue.Empty()
     is S57Value.Text -> value.textToPortrayalValue(attributeName)
-    is S57Value.Integer -> S57PortrayalValue.Integer(value)
-    is S57Value.Decimal -> S57PortrayalValue.Decimal(value)
-    is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalValue(attributeName) })
+    is S57Value.Integer -> when (attributeName.valueKind()) {
+        S57AttributeValueKind.Decimal -> S57PortrayalValue.Decimal(value.toDouble())
+        S57AttributeValueKind.EnumerationList -> S57PortrayalValue.ListValue(listOf(S57PortrayalValue.Integer(value)))
+        else -> S57PortrayalValue.Integer(value)
+    }
+    is S57Value.Decimal -> when (attributeName.valueKind()) {
+        S57AttributeValueKind.Integer,
+        S57AttributeValueKind.Enumeration -> S57PortrayalValue.Integer(value.toInt())
+        S57AttributeValueKind.EnumerationList -> S57PortrayalValue.ListValue(listOf(S57PortrayalValue.Integer(value.toInt())))
+        else -> S57PortrayalValue.Decimal(value)
+    }
+    is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalListElement(attributeName) })
+}
+
+private fun S57Value.toPortrayalListElement(attributeName: String?): S57PortrayalValue = when (this) {
+    S57Value.Empty -> S57PortrayalValue.Empty()
+    is S57Value.Text -> value.textToPortrayalListElement(attributeName)
+    is S57Value.Integer -> if (attributeName.valueKind() == S57AttributeValueKind.Decimal) S57PortrayalValue.Decimal(value.toDouble()) else S57PortrayalValue.Integer(value)
+    is S57Value.Decimal -> if (attributeName.valueKind() == S57AttributeValueKind.Decimal) S57PortrayalValue.Decimal(value) else S57PortrayalValue.Integer(value.toInt())
+    is S57Value.ListValue -> S57PortrayalValue.ListValue(values.map { it.toPortrayalListElement(attributeName) })
 }
 
 private fun String.textToPortrayalValue(attributeName: String?): S57PortrayalValue {
     val trimmed = trim()
     if (trimmed.isEmpty()) return S57PortrayalValue.Text(this)
-    if (attributeName in NUMERIC_DECIMAL_ATTRIBUTES) trimmed.toDoubleOrNull()?.let { return S57PortrayalValue.Decimal(it) }
-    if (attributeName in NUMERIC_INTEGER_ATTRIBUTES) trimmed.toIntOrNull()?.let { return S57PortrayalValue.Integer(it) }
-    return S57PortrayalValue.Text(this)
+    return when (attributeName.valueKind()) {
+        S57AttributeValueKind.Decimal -> trimmed.toDoubleOrNull()?.let(S57PortrayalValue::Decimal) ?: S57PortrayalValue.Text(this)
+        S57AttributeValueKind.Integer -> trimmed.toIntOrNull()?.let(S57PortrayalValue::Integer) ?: S57PortrayalValue.Text(this)
+        S57AttributeValueKind.Enumeration -> trimmed.toIntOrNull()?.let(S57PortrayalValue::Integer) ?: S57PortrayalValue.Text(this)
+        S57AttributeValueKind.EnumerationList -> {
+            val values = splitNumericListTokens().mapNotNull { it.toIntOrNull()?.let(S57PortrayalValue::Integer) }
+            if (values.isNotEmpty()) S57PortrayalValue.ListValue(values) else S57PortrayalValue.Text(this)
+        }
+        S57AttributeValueKind.Text,
+        S57AttributeValueKind.Unknown -> S57PortrayalValue.Text(this)
+    }
 }
+
+private fun String.textToPortrayalListElement(attributeName: String?): S57PortrayalValue {
+    val trimmed = trim()
+    return when (attributeName.valueKind()) {
+        S57AttributeValueKind.Decimal -> trimmed.toDoubleOrNull()?.let(S57PortrayalValue::Decimal) ?: S57PortrayalValue.Text(this)
+        else -> trimmed.toIntOrNull()?.let(S57PortrayalValue::Integer) ?: S57PortrayalValue.Text(this)
+    }
+}
+
+private fun String?.valueKind(): S57AttributeValueKind = ATTRIBUTE_VALUE_KINDS[this?.uppercase()] ?: S57AttributeValueKind.Unknown
+
+private fun String.splitNumericListTokens(): List<String> =
+    split(',', ';', '|', '\u001f', '\u001e').map { it.trim() }.filter { it.isNotEmpty() }
 
 private fun S57Value.splitListValues(): List<S57Value> = when (this) {
     is S57Value.ListValue -> values
-    is S57Value.Text -> value.split(',', ';', '|').mapNotNull { token -> token.trim().takeIf { it.isNotEmpty() }?.let(S57Value::Text) }
+    is S57Value.Text -> value.splitNumericListTokens().map(S57Value::Text)
     else -> listOf(this)
 }
 
@@ -181,8 +219,76 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
     S57Value.Empty -> null
 }
 
-private val NUMERIC_DECIMAL_ATTRIBUTES = setOf("DRVAL1", "DRVAL2", "HEIGHT", "VALDCO", "VALSOU")
-private val NUMERIC_INTEGER_ATTRIBUTES = setOf("CATOBS", "CATLAM", "CATREA", "CATWRK", "COLOUR", "COLPAT", "LITCHR", "SCAMIN", "SCAMAX", "SIGGRP", "WATLEV")
+private enum class S57AttributeValueKind {
+    Integer,
+    Decimal,
+    Text,
+    Enumeration,
+    EnumerationList,
+    Unknown
+}
+
+private val ATTRIBUTE_VALUE_KINDS: Map<String, S57AttributeValueKind> = mapOf(
+    "BURDEP" to S57AttributeValueKind.Decimal,
+    "CONRAD" to S57AttributeValueKind.Decimal,
+    "DRVAL1" to S57AttributeValueKind.Decimal,
+    "DRVAL2" to S57AttributeValueKind.Decimal,
+    "ELEVAT" to S57AttributeValueKind.Decimal,
+    "ESTRNG" to S57AttributeValueKind.Decimal,
+    "HEIGHT" to S57AttributeValueKind.Decimal,
+    "HORACC" to S57AttributeValueKind.Decimal,
+    "HORCLR" to S57AttributeValueKind.Decimal,
+    "HORLEN" to S57AttributeValueKind.Decimal,
+    "HORWID" to S57AttributeValueKind.Decimal,
+    "ORIENT" to S57AttributeValueKind.Decimal,
+    "SECTR1" to S57AttributeValueKind.Decimal,
+    "SECTR2" to S57AttributeValueKind.Decimal,
+    "SIGPER" to S57AttributeValueKind.Decimal,
+    "SOUACC" to S57AttributeValueKind.Decimal,
+    "SURATH" to S57AttributeValueKind.Decimal,
+    "TS_TSP" to S57AttributeValueKind.Decimal,
+    "TS_TSV" to S57AttributeValueKind.Decimal,
+    "T_ACWL" to S57AttributeValueKind.Decimal,
+    "VALACM" to S57AttributeValueKind.Decimal,
+    "VALDCO" to S57AttributeValueKind.Decimal,
+    "VALLMA" to S57AttributeValueKind.Decimal,
+    "VALMAG" to S57AttributeValueKind.Decimal,
+    "VALMXR" to S57AttributeValueKind.Decimal,
+    "VALNMR" to S57AttributeValueKind.Decimal,
+    "VALSOU" to S57AttributeValueKind.Decimal,
+    "VERACC" to S57AttributeValueKind.Decimal,
+    "VERCLR" to S57AttributeValueKind.Decimal,
+    "VERCCL" to S57AttributeValueKind.Decimal,
+    "VERCSA" to S57AttributeValueKind.Decimal,
+    "VERLEN" to S57AttributeValueKind.Decimal,
+    "LIFCAP" to S57AttributeValueKind.Integer,
+    "MLTYLT" to S57AttributeValueKind.Integer,
+    "RYRMGV" to S57AttributeValueKind.Integer,
+    "SCAMAX" to S57AttributeValueKind.Integer,
+    "SCAMIN" to S57AttributeValueKind.Integer,
+    "SIGFRQ" to S57AttributeValueKind.Integer,
+    "BCNSHP" to S57AttributeValueKind.Enumeration,
+    "BOYSHP" to S57AttributeValueKind.Enumeration,
+    "CATLAM" to S57AttributeValueKind.Enumeration,
+    "CATOBS" to S57AttributeValueKind.Enumeration,
+    "CATWRK" to S57AttributeValueKind.Enumeration,
+    "COLPAT" to S57AttributeValueKind.Enumeration,
+    "EXPSOU" to S57AttributeValueKind.Enumeration,
+    "LITCHR" to S57AttributeValueKind.Enumeration,
+    "TOPSHP" to S57AttributeValueKind.Enumeration,
+    "VERDAT" to S57AttributeValueKind.Enumeration,
+    "WATLEV" to S57AttributeValueKind.Enumeration,
+    "CATREA" to S57AttributeValueKind.EnumerationList,
+    "COLOUR" to S57AttributeValueKind.EnumerationList,
+    "COMCHA" to S57AttributeValueKind.EnumerationList,
+    "FUNCTN" to S57AttributeValueKind.EnumerationList,
+    "NATCON" to S57AttributeValueKind.EnumerationList,
+    "PRODCT" to S57AttributeValueKind.EnumerationList,
+    "QUASOU" to S57AttributeValueKind.EnumerationList,
+    "RESTRN" to S57AttributeValueKind.EnumerationList,
+    "STATUS" to S57AttributeValueKind.EnumerationList,
+    "TECSOU" to S57AttributeValueKind.EnumerationList
+)
 
 data class S52AdapterFeature(
     val id: Long,
