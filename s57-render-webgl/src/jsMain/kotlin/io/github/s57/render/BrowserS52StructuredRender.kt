@@ -94,26 +94,30 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " text=" + (stats.textCount + stats.soundingCount) +
             " diagnostics=" + portrayed.diagnostics.size
         val renderedLinearOrAreaDrawCount = stats.lineCount + stats.areaFillCount + stats.areaPatternCount
-        val missingLinearOrAreaOutput = linearOrAreaFeatureCount > 0 && renderedLinearOrAreaDrawCount <= 0
-        if (s52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount) || missingLinearOrAreaOutput) {
-            val stage = when {
-                missingLinearOrAreaOutput -> "point-only-renderer"
-                s52.hasOnlyPointLikeCommands() && linearOrAreaFeatureCount > 0 -> "point-only-portrayal"
-                else -> "zero-drawcalls"
-            }
+        val partialOutputDiagnostic = s52PartialLineAreaDiagnostic(
+            frame = frame,
+            linearOrAreaFeatureCount = linearOrAreaFeatureCount,
+            renderedLinearOrAreaDrawCount = renderedLinearOrAreaDrawCount
+        )
+        val effectiveS52 = if (partialOutputDiagnostic == null) {
+            s52
+        } else {
+            val diagnostics = s52.diagnostics + partialOutputDiagnostic
+            s52.copy(diagnostics = diagnostics, diagnosticCount = diagnostics.size)
+        }
+        if (effectiveS52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount)) {
             geometryFallbackRender(
                 canvasId = canvasId,
                 frame = frame,
-                reason = message + " but source geometry has line/area features=" + linearOrAreaFeatureCount + " and S-52 line/area draw count=" + renderedLinearOrAreaDrawCount,
-                s52 = s52.copy(failureStage = stage)
+                reason = message + " but S-52 did not produce usable GPU output",
+                s52 = effectiveS52.copy(failureStage = "zero-drawcalls")
             )
         } else {
-            if (s52.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
-                val overlay = renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)
-                frame.summary().copy(message = message + "; " + overlay.message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
-            } else {
-                frame.summary().copy(message = message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
-            }
+            // Do not repaint a successful OpenCPN/S-52 frame with decoded debug
+            // geometry.  That fallback renderer intentionally uses simple local
+            // shapes and colors; drawing it over S-52 output hides real buoy and
+            // beacon symbols and makes PNG snapshots look like diagnostics.
+            frame.summary().copy(message = message, s52 = effectiveS52, pipelineDiagnostics = effectiveS52.diagnostics)
         }
     } catch (t: Throwable) {
         val s52 = portrayed.toSummary(failureStage = "webgl-render")
@@ -126,6 +130,26 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             s52 = s52
         )
     }
+}
+
+
+private fun s52PartialLineAreaDiagnostic(
+    frame: StaticChartFrame,
+    linearOrAreaFeatureCount: Int,
+    renderedLinearOrAreaDrawCount: Int
+): RenderPipelineDiagnostic? {
+    if (linearOrAreaFeatureCount <= 0 || renderedLinearOrAreaDrawCount > 0) return null
+    return RenderPipelineDiagnostic(
+        stage = RenderPipelineStage.WebGl,
+        severity = RenderPipelineSeverity.Warning,
+        code = "s52.partial-line-area-output",
+        message = "S-52 produced GPU output but no line/area draw counts for projected line/area source features; preserving the OpenCPN/S-52 canvas instead of replacing symbols with decoded debug fallback geometry",
+        source = RenderPipelineSource(cellId = frame.request.cellId),
+        metadata = mapOf(
+            "projectedLinearOrAreaFeatureCount" to linearOrAreaFeatureCount.toString(),
+            "s52RenderedLinearOrAreaDrawCount" to renderedLinearOrAreaDrawCount.toString()
+        )
+    )
 }
 
 private fun BrowserS57WebGlRenderer.geometryFallbackRender(

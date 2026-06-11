@@ -12,6 +12,7 @@ val S52RenderSummary.usedGeometryFallback: Boolean
 fun S52RenderSummary.needsGeometryFallback(projectedSourceFeatureCount: Int): Boolean =
     needsGeometryFallback(projectedSourceFeatureCount = projectedSourceFeatureCount, projectedLinearOrAreaFeatureCount = 0)
 
+@Suppress("UNUSED_PARAMETER")
 fun S52RenderSummary.needsGeometryFallback(
     projectedSourceFeatureCount: Int,
     projectedLinearOrAreaFeatureCount: Int
@@ -20,7 +21,15 @@ fun S52RenderSummary.needsGeometryFallback(
     if (failureStage != "none") return true
     if (commandCount <= 0) return true
     if (drawCallCount <= 0) return true
-    if (projectedLinearOrAreaFeatureCount > 0 && hasOnlyPointLikeCommands()) return true
+
+    // A successful S-52/OpenCPN render must own the canvas.  Older fixes treated
+    // a point-only S-52 result as failed when decoded line/area source geometry
+    // existed, then repainted the whole frame with the local decoded-geometry
+    // renderer.  That made the browser and CI PNG show debug diamonds/crosses
+    // and repository-local colors instead of the OpenCPN presentation-library
+    // symbols.  Keep the S-52 frame whenever the renderer produced draw calls;
+    // diagnostics can still report partial line/area coverage without replacing
+    // buoy/beacon symbols with fallback glyphs.
     return false
 }
 

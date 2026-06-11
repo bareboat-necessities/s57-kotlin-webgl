@@ -52,7 +52,7 @@ class S52RenderFallbackPolicyTest {
     }
 
     @Test
-    fun usesFallbackWhenS52IsPointOnlyButSourceHasLineOrAreaGeometry() {
+    fun keepsSuccessfulS52FrameEvenWhenOutputIsPointOnlyAndSourceHasLineOrAreaGeometry() {
         val s52 = S52RenderSummary(
             profile = "OpenCpn",
             encFeatureCount = 12,
@@ -63,7 +63,7 @@ class S52RenderFallbackPolicyTest {
             failureStage = "none"
         )
 
-        assertTrue(s52.needsGeometryFallback(projectedSourceFeatureCount = 12, projectedLinearOrAreaFeatureCount = 4))
+        assertFalse(s52.needsGeometryFallback(projectedSourceFeatureCount = 12, projectedLinearOrAreaFeatureCount = 4))
     }
 
     @Test
