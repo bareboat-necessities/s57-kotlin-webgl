@@ -10,7 +10,7 @@ rm -rf "$OUT_DIR/extract"
 mkdir -p "$OUT_DIR/extract"
 
 DEFAULT_URLS=(
-  "https://charts.noaa.gov/ENCs/US5MA11M.zip"
+  "https://charts.noaa.gov/ENCs/US5NYCDF.zip"
   "https://charts.noaa.gov/ENCs/US5NY1CE.zip"
   "https://charts.noaa.gov/ENCs/US5NY1BM.zip"
   "https://charts.noaa.gov/ENCs/US5NY1AM.zip"
