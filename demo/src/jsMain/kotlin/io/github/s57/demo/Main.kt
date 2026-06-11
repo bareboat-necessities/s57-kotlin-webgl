@@ -37,7 +37,6 @@ import io.github.s57.render.toS57ByteArray
 import io.github.s57.render.viewerCellOptions
 import kotlinx.browser.document
 import kotlinx.browser.window
-import kotlin.js.JSON
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLInputElement
@@ -142,9 +141,13 @@ fun main() {
 
     fun publishPhase26Report(report: RenderPipelineDiagnosticReport) {
         latestPipelineReport = report
-        window.asDynamic().s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
-        window.asDynamic().s57Phase26ReportJson = { latestPipelineReport.toJson() }
-        window.asDynamic().s57Phase26Report = { JSON.parse<dynamic>(latestPipelineReport.toJson()) }
+        val dynamicWindow = window.asDynamic()
+        dynamicWindow.s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
+        dynamicWindow.s57Phase26ReportJson = { latestPipelineReport.toJson() }
+        // Keep the legacy browser helper, but implement it as plain JavaScript.
+        // JSON.parse<dynamic>(...) can compile to a Kotlin dynamic bridge that
+        // throws "P.asDynamic is not a function" in CI/Chrome.
+        dynamicWindow.s57Phase26Report = js("function() { return JSON.parse(window.s57Phase26ReportJson()); }")
     }
 
     fun downloadUrl(fileName: String, url: String) {

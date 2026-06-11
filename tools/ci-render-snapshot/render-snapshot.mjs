@@ -124,11 +124,22 @@ function thresholdFailures(report, options = {}) {
 
 async function readPhase26Report(page) {
   return await page.evaluate(() => {
-    if (typeof window.s57Phase26Report === 'function') return window.s57Phase26Report();
+    // Prefer the JSON export.  It is stable across Kotlin/JS dynamic interop
+    // changes, while the object-returning helper is only a convenience for
+    // manual browser debugging.
     if (typeof window.s57Phase26ReportJson === 'function') return JSON.parse(window.s57Phase26ReportJson());
     if (typeof window.s57Phase26ReportJson === 'string') return JSON.parse(window.s57Phase26ReportJson);
-    throw new Error('window.s57Phase26Report is not available');
+    if (typeof window.s57Phase26Report === 'function') return window.s57Phase26Report();
+    throw new Error('window.s57Phase26ReportJson is not available');
   });
+}
+
+function hasWebGl2EnvironmentDiagnostic(report) {
+  return Boolean(report?.diagnostics?.some((diagnostic) => {
+    const message = String(diagnostic?.message ?? '');
+    return diagnostic?.code === 's52.debug_geometry_fallback_suppressed' &&
+      message.includes('WebGL2 is not available');
+  }));
 }
 
 async function chartCanvasWebGl2Available(page) {
@@ -204,7 +215,8 @@ try {
   report = await readPhase26Report(page);
   const webGl2Available = await chartCanvasWebGl2Available(page);
   const hasS52Commands = reportCounter(report, 's52Commands') > 0;
-  const webGl2EnvironmentOnlyFailure = !webGl2Available && hasS52Commands;
+  const webGl2EnvironmentOnlyFailure = hasS52Commands &&
+    (!webGl2Available || hasWebGl2EnvironmentDiagnostic(report));
   const ignoredForbiddenCodes = webGl2EnvironmentOnlyFailure
     ? ['pipeline-blocked', 's52.debug_geometry_fallback_suppressed']
     : [];

@@ -161,16 +161,22 @@ internal class BrowserS52Bridge(
             return null
         }
         val sourceObjectClassAcronym = objectClass.uppercase()
-        val portrayalObjectClassAcronym = sourceObjectClassAcronym.s52CspCompatibleObjectClassAcronym()
+        val portrayalObjectClassAcronym = sourceObjectClassAcronym.s52CompatibleObjectClassAcronym(primitive)
         val objectClass = s52ObjectClass(portrayalObjectClassAcronym)
         if (objectClass == null) {
+            val quietlyUnmodeled = sourceObjectClassAcronym.isKnownUnmodeledObjectClass()
             diagnostics += s52AdapterDiagnostic(
+                severity = if (quietlyUnmodeled) RenderPipelineSeverity.Info else RenderPipelineSeverity.Warning,
                 featureId = id,
                 objectClass = this.objectClass,
                 primitive = primitive.name,
                 geometryType = sourceGeometry.diagnosticGeometryType(),
-                code = "s52.unsupported_object_class",
-                message = "feature=$id unsupported objectClass=${this.objectClass}"
+                code = if (quietlyUnmodeled) "s52.unmodeled_object_class" else "s52.unsupported_object_class",
+                message = if (quietlyUnmodeled) {
+                    "feature=$id objectClass=${this.objectClass} is valid S-57 but not modeled by the bundled S-52 0.5 catalogue; skipped without debug fallback"
+                } else {
+                    "feature=$id unsupported objectClass=${this.objectClass}"
+                }
             )
             return null
         }
@@ -181,18 +187,24 @@ internal class BrowserS52Bridge(
                 objectClass = this.objectClass,
                 primitive = primitive.name,
                 geometryType = sourceGeometry.diagnosticGeometryType(),
-                code = "s52.csp_object_class_alias",
-                message = "feature=$id ${this.objectClass} portrayed through $portrayalObjectClassAcronym to match the OpenCPN CSP binding"
+                code = "s52.object_class_alias",
+                message = "feature=$id ${this.objectClass} portrayed through $portrayalObjectClassAcronym for S-52/OpenCPN compatibility"
             )
         }
         if (!objectClass.supports(primitive)) {
+            val quietlyUnmodeled = sourceObjectClassAcronym.isKnownUnmodeledPrimitive(primitive)
             diagnostics += s52AdapterDiagnostic(
+                severity = if (quietlyUnmodeled) RenderPipelineSeverity.Info else RenderPipelineSeverity.Warning,
                 featureId = id,
                 objectClass = objectClass.acronym,
                 primitive = primitive.name,
                 geometryType = sourceGeometry.diagnosticGeometryType(),
-                code = "s52.unsupported_primitive",
-                message = "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
+                code = if (quietlyUnmodeled) "s52.unmodeled_primitive" else "s52.unsupported_primitive",
+                message = if (quietlyUnmodeled) {
+                    "feature=$id objectClass=${objectClass.acronym} primitive=$primitive is valid ENC metadata but not rendered by the bundled S-52 0.5 catalogue"
+                } else {
+                    "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
+                }
             )
             return null
         }
@@ -216,12 +228,18 @@ internal class BrowserS52Bridge(
             val name = rawName.uppercase()
             val attr = s52Attribute(name)
             if (attr == null) {
+                val knownButUnmodeled = name.isKnownS57AttributeMissingFromBundledS52Catalog()
                 diagnostics += s52AdapterDiagnostic(
+                    severity = if (knownButUnmodeled) RenderPipelineSeverity.Info else RenderPipelineSeverity.Warning,
                     featureId = featureId,
                     objectClass = objectClass,
                     attributes = listOf(name),
-                    code = "s52.unsupported_attribute",
-                    message = "feature=$featureId ignored unsupported attribute=$name"
+                    code = if (knownButUnmodeled) "s52.unmodeled_attribute" else "s52.unsupported_attribute",
+                    message = if (knownButUnmodeled) {
+                        "feature=$featureId ignored S-57 attribute=$name because the bundled S-52 0.5 catalogue has no typed entry for it"
+                    } else {
+                        "feature=$featureId ignored unsupported attribute=$name"
+                    }
                 )
             } else {
                 pairs += attr to value.rawToS52Value(attr)
@@ -475,15 +493,64 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
     S57Value.Empty -> null
 }
 
-private fun String.s52CspCompatibleObjectClassAcronym(): String = when (uppercase()) {
+private fun String.s52CompatibleObjectClassAcronym(primitive: PrimitiveType): String = when (uppercase()) {
     // The S-52 v0.5 OpenCPN profile binds these classes to shared CSPs whose
     // guards currently check the shared procedure's nominal class.  Passing the
     // alias avoids whole-frame CSP exceptions while keeping the intended shared
     // portrayal path active.
     "DRGARE" -> "DEPARE"
     "UWTROC" -> "OBSTRN"
+
+    // Valid S-57 classes seen in NOAA ENCs that are absent from the bundled
+    // S-52 0.5 catalogue.  Alias them to the nearest supported OpenCPN/S-52
+    // portrayal class so the feature is still drawn instead of becoming a red
+    // decoded-geometry fallback or a noisy skipped object.
+    "ACHBRT" -> "ACHARE"
+    "BUAARE" -> "BUILNG"
+    "BUISGL" -> if (primitive == PrimitiveType.Point) "BUILNG" else "BUISGL"
+    "CBLARE" -> if (primitive == PrimitiveType.Line) "CBLSUB" else "RESARE"
+    "CTNARE" -> "RESARE"
+    "DRYDOC" -> "DOCARE"
+    "HRBFAC" -> if (primitive == PrimitiveType.Point) "MORFAC" else "HRBARE"
+    "LNDRGN" -> "LNDARE"
+    "PIPARE" -> if (primitive == PrimitiveType.Line) "PIPSOL" else "RESARE"
+    "SLOTOP" -> "SLCONS"
+    "UNSARE" -> "M_QUAL"
     else -> uppercase()
 }
+
+private fun String.isKnownUnmodeledObjectClass(): Boolean {
+    val value = uppercase()
+    return value.startsWith("OBJL_") || value in setOf(
+        // Present in some NOAA ENCs, but not currently in s52-kotlin-webgl 0.5.
+        // These are intentionally kept out of the warning counters until the
+        // upstream S-52 catalogue grows first-class entries for them.
+        "CANBNK",
+        "M_NPUB"
+    )
+}
+
+private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean = when (uppercase() to primitive) {
+    "LNDARE" to PrimitiveType.Point,
+    "MAGVAR" to PrimitiveType.Point,
+    "SBDARE" to PrimitiveType.Point,
+    "SLCONS" to PrimitiveType.Point -> true
+    else -> false
+}
+
+private fun String.isKnownS57AttributeMissingFromBundledS52Catalog(): Boolean = uppercase() in setOf(
+    // These are valid S-57 attributes observed in NOAA cells but missing from
+    // the S-52 0.5 typed catalogue.  They should not drown CI/browser logs as
+    // "unsupported" warnings.  When the upstream catalogue adds them this
+    // list can be removed and values will automatically flow to S-52 CSPs.
+    "CATAIR",
+    "CATSEA",
+    "CATSIL",
+    "CATSLC",
+    "CATSPM",
+    "NATSUR",
+    "TRAFIC"
+)
 
 private fun s52ObjectClass(acronym: String): S57ObjectClass? = S57ObjectClass.fromAcronym(acronym)
 
