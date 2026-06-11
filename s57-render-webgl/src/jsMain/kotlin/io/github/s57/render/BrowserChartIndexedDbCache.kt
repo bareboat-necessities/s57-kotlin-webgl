@@ -42,15 +42,20 @@ class BrowserChartIndexedDbCache(
     }
 
     fun put(fileName: String, bytes: ByteArray, importResult: S57EngineImportResult, callback: (Result<BrowserChartCacheEntry>) -> Unit) {
+        putSequence(fileName, listOf(bytes), importResult, callback)
+    }
+
+    fun putSequence(fileName: String, payloads: List<ByteArray>, importResult: S57EngineImportResult, callback: (Result<BrowserChartCacheEntry>) -> Unit) {
         open { opened ->
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val key = browserChartCacheKey(fileName, bytes.size)
+                        val byteCount = payloads.sumOf { it.size }
+                        val key = browserChartCacheKey(fileName, byteCount)
                         val entry = BrowserChartCacheEntry(
                             cacheKey = key,
                             fileName = fileName,
-                            byteCount = bytes.size,
+                            byteCount = byteCount,
                             cellId = importResult.cell.cellId,
                             featureCount = importResult.cell.featureCount,
                             cachedAtMillis = window.performance.now()
@@ -62,7 +67,8 @@ class BrowserChartIndexedDbCache(
                         row.cellId = entry.cellId
                         row.featureCount = entry.featureCount
                         row.cachedAtMillis = entry.cachedAtMillis
-                        row.payload = bytes.toInt8Array()
+                        row.payload = payloads.firstOrNull()?.toInt8Array()
+                        row.payloads = payloads.map { it.toInt8Array() }.toTypedArray()
 
                         val tx = db.asDynamic().transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
@@ -98,8 +104,8 @@ class BrowserChartIndexedDbCache(
                                 callback(Result.success(null))
                             } else {
                                 val entry = row.toCacheEntryOrNull()
-                                val payload = row.asDynamic().payload.unsafeCast<Int8Array>().toByteArray()
-                                callback(Result.success(if (entry == null) null else CachedChartPayload(entry, payload)))
+                                val payloads = row.toPayloadList()
+                                callback(Result.success(if (entry == null || payloads.isEmpty()) null else CachedChartPayload(entry, payloads)))
                             }
                             null
                         }
@@ -168,8 +174,10 @@ class BrowserChartIndexedDbCache(
 
 data class CachedChartPayload(
     val entry: BrowserChartCacheEntry,
-    val bytes: ByteArray
-)
+    val payloads: List<ByteArray>
+) {
+    val bytes: ByteArray get() = payloads.first()
+}
 
 private fun Any?.toCacheEntryOrNull(): BrowserChartCacheEntry? = try {
     val row = this.asDynamic()
@@ -183,4 +191,17 @@ private fun Any?.toCacheEntryOrNull(): BrowserChartCacheEntry? = try {
     )
 } catch (_: Throwable) {
     null
+}
+
+private fun Any?.toPayloadList(): List<ByteArray> = try {
+    val row = this.asDynamic()
+    val payloads = row.payloads
+    if (payloads != null) {
+        val length = (payloads.length as Number).toInt()
+        (0 until length).mapNotNull { index -> payloads[index]?.unsafeCast<Int8Array>()?.toByteArray() }
+    } else {
+        listOf(row.payload.unsafeCast<Int8Array>().toByteArray())
+    }
+} catch (_: Throwable) {
+    emptyList()
 }

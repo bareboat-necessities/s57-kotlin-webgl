@@ -30,6 +30,13 @@ class S57WebGlEngine(
         return importDataset(imported.dataset, imported, decodeMs)
     }
 
+    fun importS57ByteSequence(payloads: List<ByteArray>): S57EngineImportResult {
+        val decodeStart = monotonicNowMs()
+        val imported = importPipeline.importByteSequence(payloads)
+        val decodeMs = monotonicNowMs() - decodeStart
+        return importDataset(imported.dataset, imported, decodeMs)
+    }
+
     fun importDataset(dataset: S57Dataset): S57EngineImportResult {
         return importDataset(dataset, null, decodeMs = 0.0)
     }
