@@ -18,7 +18,10 @@ class S57StaticChartRenderer(
     private val depthMeshBuilder: DepthMeshBuilder = EmptyDepthMeshBuilder()
 ) {
     fun prepareFrame(request: ChartRenderRequest): StaticChartFrame {
-        val features = indexStore.queryFeatures(S57FeatureQuery(request.cellId, request.bounds))
+        val renderCellIds = request.renderCellIds
+        val features = renderCellIds.flatMap { cellId ->
+            indexStore.queryFeatures(S57FeatureQuery(cellId, request.bounds))
+        }
         val adapted = adapter.adaptFeatures(features)
         val projection = chartProjectionFrom(request)
         val projected = features.mapNotNull { feature ->

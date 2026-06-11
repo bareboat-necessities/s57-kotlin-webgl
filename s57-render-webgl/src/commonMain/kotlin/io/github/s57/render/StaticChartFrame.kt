@@ -152,7 +152,7 @@ data class StaticChartFrame(
     fun summary(): RenderedFrameSummary = RenderedFrameSummary(
         widthPx = request.widthPx,
         heightPx = request.heightPx,
-        message = "Phase 20 static chart frame features=$featureCount queried=$queriedFeatureCount adapted=$adaptedFeatureCount onscreen=$onscreenFeatureCount offscreen=$offscreenFeatureCount clipped=$clippedFeatureCount mode=${request.renderMode}",
+        message = "Phase 20 static chart frame cells=${request.renderCellIds.size} features=$featureCount queried=$queriedFeatureCount adapted=$adaptedFeatureCount onscreen=$onscreenFeatureCount offscreen=$offscreenFeatureCount clipped=$clippedFeatureCount mode=${request.renderMode}",
         camera = request.camera,
         centerCrosshairHits = centerCrosshairHits,
         depthMeshEnabled = depthMesh != null || request.depthMesh.enabled
