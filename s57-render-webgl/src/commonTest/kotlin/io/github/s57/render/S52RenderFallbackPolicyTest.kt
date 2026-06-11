@@ -81,7 +81,7 @@ class S52RenderFallbackPolicyTest {
     }
 
     @Test
-    fun overlaysDecodedGeometryWhenS52ReportsDrawCallsButMayStillLookLikeDots() {
+    fun doesNotOverlayDecodedGeometryWhenS52ProducedGpuOutput() {
         val s52 = S52RenderSummary(
             profile = "OpenCpn",
             encFeatureCount = 10,
@@ -92,7 +92,7 @@ class S52RenderFallbackPolicyTest {
             failureStage = "none"
         )
 
-        assertTrue(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))
+        assertFalse(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))
     }
 
     @Test
@@ -103,7 +103,7 @@ class S52RenderFallbackPolicyTest {
     }
 
     @Test
-    fun overlaysDecodedSymbologyForPointOnlySuccessfulS52Render() {
+    fun doesNotOverlayDecodedSymbologyForPointOnlySuccessfulS52Render() {
         val s52 = S52RenderSummary(
             profile = "OpenCpn",
             encFeatureCount = 3,
@@ -114,7 +114,7 @@ class S52RenderFallbackPolicyTest {
             failureStage = "none"
         )
 
-        assertTrue(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 3, projectedLinearOrAreaFeatureCount = 0))
+        assertFalse(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 3, projectedLinearOrAreaFeatureCount = 0))
     }
 
 }
