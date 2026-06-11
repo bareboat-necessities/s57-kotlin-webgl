@@ -102,4 +102,19 @@ class S52RenderFallbackPolicyTest {
         assertFalse(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))
     }
 
+    @Test
+    fun overlaysDecodedSymbologyForPointOnlySuccessfulS52Render() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 3,
+            commandCount = 3,
+            drawCallCount = 3,
+            symbolCommandCount = 0,
+            soundingCommandCount = 0,
+            failureStage = "none"
+        )
+
+        assertTrue(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 3, projectedLinearOrAreaFeatureCount = 0))
+    }
+
 }
