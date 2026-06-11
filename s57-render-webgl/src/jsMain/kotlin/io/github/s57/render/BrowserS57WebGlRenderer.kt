@@ -343,15 +343,27 @@ class BrowserS57WebGlRenderer(
             when (val geometry = feature.geometry) {
                 is ProjectedGeometry.Empty -> Unit
                 is ProjectedGeometry.Point -> {
-                    if (includePointGlyphs && feature.objectClass.uppercase() != "SOUNDG") {
-                        drawPointGlyph(program, geometry.point, canvas, feature.objectClass, colorFor(feature.objectClass))
-                        counts.points++
+                    if (includePointGlyphs) {
+                        if (feature.objectClass.uppercase() == "SOUNDG") {
+                            if (includeSoundingPointGlyphs && drawSoundingLabel(program, geometry.point, canvas, feature)) counts.points++
+                        } else {
+                            drawPointGlyph(program, geometry.point, canvas, feature.objectClass, colorFor(feature.objectClass))
+                            counts.points++
+                        }
                     }
                 }
                 is ProjectedGeometry.MultiPoint -> {
-                    if (includePointGlyphs && feature.objectClass.uppercase() != "SOUNDG") {
-                        geometry.points.forEach { point -> drawPointGlyph(program, point, canvas, feature.objectClass, colorFor(feature.objectClass)) }
-                        counts.points += geometry.points.size
+                    if (includePointGlyphs) {
+                        if (feature.objectClass.uppercase() == "SOUNDG") {
+                            if (includeSoundingPointGlyphs) {
+                                geometry.points.forEachIndexed { index, point ->
+                                    if (drawSoundingLabel(program, point, canvas, feature, index)) counts.points++
+                                }
+                            }
+                        } else {
+                            geometry.points.forEach { point -> drawPointGlyph(program, point, canvas, feature.objectClass, colorFor(feature.objectClass)) }
+                            counts.points += geometry.points.size
+                        }
                     }
                 }
                 is ProjectedGeometry.LineString -> {
@@ -388,6 +400,19 @@ class BrowserS57WebGlRenderer(
 
     private fun List<ScreenPoint>.closedForStroke(): List<ScreenPoint> =
         if (size >= 2 && first() != last()) this + first() else this
+
+
+    private fun drawSoundingLabel(
+        program: BrowserSimpleColorProgram,
+        point: ScreenPoint,
+        canvas: HTMLCanvasElement,
+        feature: ProjectedFeature,
+        pointIndex: Int = 0
+    ): Boolean {
+        val label = feature.soundingLabel(pointIndex) ?: return false
+        program.drawSegmentLabel(label, point, canvas, colorFor(feature.objectClass), heightPx = 10.0, strokeWidthPx = 1.35)
+        return true
+    }
 
     private fun drawPointGlyph(
         program: BrowserSimpleColorProgram,
@@ -545,6 +570,59 @@ private class BrowserSimpleColorProgram(
             points += ScreenPoint(center.x + kotlin.math.cos(angle) * radiusPx, center.y + kotlin.math.sin(angle) * radiusPx)
         }
         draw(WebGLRenderingContext.TRIANGLE_FAN, points, canvas, color)
+    }
+
+    fun drawSegmentLabel(label: String, center: ScreenPoint, canvas: HTMLCanvasElement, color: FloatArray, heightPx: Double, strokeWidthPx: Double) {
+        val chars = label.filter { it.isDigit() || it == '.' || it == '-' }
+        if (chars.isEmpty()) return
+        val charWidth = heightPx * 0.56
+        val advance = charWidth * 0.78
+        val totalWidth = advance * (chars.length - 1).coerceAtLeast(0) + charWidth
+        var x = center.x - totalWidth / 2.0
+        val y = center.y - heightPx / 2.0
+        chars.forEach { char ->
+            drawSegmentChar(char, ScreenPoint(x, y), charWidth, heightPx, canvas, color, strokeWidthPx)
+            x += advance
+        }
+    }
+
+    private fun drawSegmentChar(char: Char, topLeft: ScreenPoint, width: Double, height: Double, canvas: HTMLCanvasElement, color: FloatArray, strokeWidthPx: Double) {
+        val x = topLeft.x
+        val y = topLeft.y
+        val midY = y + height / 2.0
+        val bottomY = y + height
+        val rightX = x + width
+        val inset = width * 0.10
+        val segments = when (char) {
+            '0' -> listOf('a', 'b', 'c', 'd', 'e', 'f')
+            '1' -> listOf('b', 'c')
+            '2' -> listOf('a', 'b', 'g', 'e', 'd')
+            '3' -> listOf('a', 'b', 'g', 'c', 'd')
+            '4' -> listOf('f', 'g', 'b', 'c')
+            '5' -> listOf('a', 'f', 'g', 'c', 'd')
+            '6' -> listOf('a', 'f', 'g', 'e', 'c', 'd')
+            '7' -> listOf('a', 'b', 'c')
+            '8' -> listOf('a', 'b', 'c', 'd', 'e', 'f', 'g')
+            '9' -> listOf('a', 'b', 'c', 'd', 'f', 'g')
+            '-' -> listOf('g')
+            else -> emptyList()
+        }
+        for (segment in segments) {
+            val points = when (segment) {
+                'a' -> listOf(ScreenPoint(x + inset, y), ScreenPoint(rightX - inset, y))
+                'b' -> listOf(ScreenPoint(rightX, y + inset), ScreenPoint(rightX, midY - inset))
+                'c' -> listOf(ScreenPoint(rightX, midY + inset), ScreenPoint(rightX, bottomY - inset))
+                'd' -> listOf(ScreenPoint(x + inset, bottomY), ScreenPoint(rightX - inset, bottomY))
+                'e' -> listOf(ScreenPoint(x, midY + inset), ScreenPoint(x, bottomY - inset))
+                'f' -> listOf(ScreenPoint(x, y + inset), ScreenPoint(x, midY - inset))
+                'g' -> listOf(ScreenPoint(x + inset, midY), ScreenPoint(rightX - inset, midY))
+                else -> emptyList()
+            }
+            drawLineStrip(points, canvas, color, strokeWidthPx)
+        }
+        if (char == '.') {
+            drawCircle(ScreenPoint(x + width / 2.0, bottomY - height * 0.08), height * 0.065, canvas, color, segments = 8)
+        }
     }
 
     private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray, lineWidth: Double = 1.0) {

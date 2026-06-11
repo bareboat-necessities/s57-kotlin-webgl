@@ -68,7 +68,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
                 val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
                 if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
-                    renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = false)
+                    renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)
                 }
             } catch (_: Throwable) {
                 // The initial render path already reports errors. Resource-ready
@@ -103,7 +103,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             )
         } else {
             if (s52.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
-                val overlay = renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = false)
+                val overlay = renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)
                 frame.summary().copy(message = message + "; " + overlay.message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
             } else {
                 frame.summary().copy(message = message, s52 = s52, pipelineDiagnostics = s52.diagnostics)
