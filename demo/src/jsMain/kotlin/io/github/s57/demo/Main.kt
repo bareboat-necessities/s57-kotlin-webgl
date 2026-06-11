@@ -361,11 +361,65 @@ fun main() {
     }
 
     fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult) {
-        chartCache.put(fileName, bytes, imported) { result ->
+        cacheImportedPayloadSequence(fileName, listOf(bytes), imported)
+    }
+
+    fun cacheImportedPayloadSequence(fileName: String, payloads: List<ByteArray>, imported: S57EngineImportResult) {
+        chartCache.putSequence(fileName, payloads, imported) { result ->
             result.onFailure { failures = failures + (fileName + ": cache failed: " + (it.message ?: it.toString())) }
             updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
             refreshCacheList()
         }
+    }
+
+    fun finishImport() {
+        activeCellId = chooseInitialActiveCell(cells(), activeCellId)
+        updateCellSummary()
+        if (imports.isNotEmpty()) {
+            if (phase26SnapshotMode()) {
+                status?.textContent = "Imported ENC cells are ready for Phase 26 CI snapshot rendering.\n" + importSummary()
+            } else {
+                renderActive("imported ENC")
+            }
+        } else {
+            status?.textContent = importSummary()
+        }
+    }
+
+    fun importChartGroups(groups: List<BrowserNoaaChartGroup>) {
+        val importable = groups.filter { it.base != null }
+        groups.filter { it.base == null }.forEach { group ->
+            failures = failures + (group.chartId + ": skipped updates without required .000 base cell")
+        }
+        if (importable.isEmpty()) {
+            finishImport()
+            return
+        }
+        fun next(index: Int) {
+            if (index >= importable.size) {
+                finishImport()
+                return
+            }
+            val group = importable[index]
+            val ordered = group.contiguousImportPayloads
+            val missingUpdate = group.firstMissingUpdateNumber
+            if (missingUpdate != null && missingUpdate <= group.importPayloads.last().updateNumber) {
+                failures = failures + (group.chartId + ": stopped update chain before missing ." + missingUpdate.toString().padStart(3, '0'))
+            }
+            status?.textContent = "Importing " + group.label + " (" + (index + 1) + "/" + importable.size + ")..."
+            try {
+                val imported = engine.importS57ByteSequence(ordered.map { it.bytes })
+                imports = imports + imported
+                updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
+                updateCellSummary()
+                next(index + 1)
+                cacheImportedPayloadSequence(group.label, ordered.map { it.bytes }, imported)
+            } catch (t: Throwable) {
+                failures = failures + (group.label + ": " + (t.message ?: t.toString()))
+                next(index + 1)
+            }
+        }
+        next(0)
     }
 
     fun importFiles(files: List<File>, labels: List<String>) {
@@ -383,45 +437,56 @@ fun main() {
             status?.textContent = "No files selected."
             return
         }
-        fun next(index: Int) {
+        val payloads = mutableListOf<BrowserNoaaChartPayload>()
+        fun collect(index: Int) {
             if (index >= files.size) {
-                activeCellId = chooseInitialActiveCell(cells(), activeCellId)
-                updateCellSummary()
-                if (imports.isNotEmpty()) {
-                    if (phase26SnapshotMode()) {
-                        status?.textContent = "Imported ENC cell is ready for Phase 26 CI snapshot rendering.\n" + importSummary()
-                    } else {
-                        renderActive("imported ENC")
-                    }
-                } else {
-                    status?.textContent = importSummary()
-                }
+                val groups = groupNoaaChartPayloads(payloads)
+                selectedLabels = labels + payloads.map { "chart: " + it.label }
+                updateFileList()
+                status?.textContent = "Discovered " + payloads.size + " ENC payload(s) in " + groups.size + " chart cell group(s)."
+                importChartGroups(groups)
                 return
             }
             val file = files[index]
-            status?.textContent = "Importing " + file.name + " (" + (index + 1) + "/" + files.size + ")..."
-            importer.readFileBytes(file) { bytesResult ->
-                val bytes = bytesResult.getOrNull()
-                if (bytes == null) {
-                    val err = bytesResult.exceptionOrNull()
-                    failures = failures + (file.name + ": " + (err?.message ?: err.toString()))
-                    next(index + 1)
+            status?.textContent = "Reading " + file.name + " (" + (index + 1) + "/" + files.size + ")..."
+            val isZip = file.name.lowercase().endsWith(".zip")
+            if (isZip) {
+                importer.readFileArrayBuffer(file) { bufferResult ->
+                    bufferResult.fold(
+                        onSuccess = { buffer ->
+                            extractNoaaChartsFromZip(file, buffer) { zipResult ->
+                                zipResult.fold(
+                                    onSuccess = { extracted -> payloads += extracted },
+                                    onFailure = { failures = failures + (file.name + ": " + (it.message ?: it.toString())) }
+                                )
+                                collect(index + 1)
+                            }
+                        },
+                        onFailure = {
+                            failures = failures + (file.name + ": " + (it.message ?: it.toString()))
+                            collect(index + 1)
+                        }
+                    )
+                }
+            } else {
+                val parsed = noaaChartPathOrNull(file.name)
+                if (parsed == null) {
+                    failures = failures + (file.name + ": skipped; expected .zip or NOAA ENC .000/.001/... file")
+                    collect(index + 1)
                 } else {
-                    try {
-                        val imported = engine.importS57Bytes(bytes)
-                        imports = imports + imported
-                        updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
-                        updateCellSummary()
-                        next(index + 1)
-                        cacheImportedPayload(file.name, bytes, imported)
-                    } catch (t: Throwable) {
-                        failures = failures + (file.name + ": " + (t.message ?: t.toString()))
-                        next(index + 1)
+                    importer.readFileBytes(file) { bytesResult ->
+                        bytesResult.fold(
+                            onSuccess = { bytes ->
+                                payloads += BrowserNoaaChartPayload(file.name, parsed.first, parsed.second, bytes)
+                            },
+                            onFailure = { failures = failures + (file.name + ": " + (it.message ?: it.toString())) }
+                        )
+                        collect(index + 1)
                     }
                 }
             }
         }
-        next(0)
+        collect(0)
     }
 
     fun restoreCachedPayloads(entries: List<BrowserChartCacheEntry>) {
@@ -456,7 +521,7 @@ fun main() {
                             failures = failures + (entry.fileName + ": cached payload missing")
                         } else {
                             try {
-                                imports = imports + engine.importS57Bytes(payload.bytes)
+                                imports = imports + engine.importS57ByteSequence(payload.payloads)
                             } catch (t: Throwable) {
                                 failures = failures + (entry.fileName + ": restore failed: " + (t.message ?: t.toString()))
                             }

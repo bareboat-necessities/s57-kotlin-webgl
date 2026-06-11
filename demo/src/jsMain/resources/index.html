@@ -27,7 +27,7 @@
   <div class="shell">
     <section class="panel">
       <h2>Load local ENC files</h2>
-      <p class="hint">Select NOAA ENC <code>.000</code> files. The browser imports them through S57WebGlEngine, indexes decoded cells, and renders the active cell through the real S-52 WebGL2 path.</p>
+      <p class="hint">Select a NOAA ENC <code>.zip</code> exchange set (recursive folders are scanned) or loose <code>.000/.001/...</code> files. The browser applies sequential updates, indexes decoded cells in IndexedDB, and renders the active cell through the real S-52 WebGL2 path.</p>
       <input id="fileInput" type="file" multiple />
       <div class="actions">
         <div class="row">

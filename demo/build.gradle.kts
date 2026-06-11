@@ -47,6 +47,7 @@ kotlin {
                 implementation(project(":s57-index"))
                 implementation(project(":s57-s52-adapter"))
                 implementation(project(":s57-render-webgl"))
+                implementation(npm("jszip", "3.10.1"))
             }
         }
     }
