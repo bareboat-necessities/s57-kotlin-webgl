@@ -25,8 +25,6 @@ Out of scope here:
 - NMEA.
 - GPS / ownship.
 - Routes and waypoints.
-- Quilting.
-- Full pan/zoom chartplotter UX.
 - Navigation alarms.
 
 A larger chartplotter application can use this library later.
