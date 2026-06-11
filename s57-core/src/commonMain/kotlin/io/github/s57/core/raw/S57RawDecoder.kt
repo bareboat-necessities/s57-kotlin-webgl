@@ -17,6 +17,7 @@ class S57RawDecoder(
         val unknown = mutableListOf<S57RawRecord>()
 
         records.forEachIndexed { index, record ->
+            if (record.isDataDescriptiveRecord()) return@forEachIndexed
             when {
                 record.field("DSID") != null || record.field("DSSI") != null -> metadataParts += decodeMetadata(record)
                 record.field("FRID") != null -> decodeFeature(record)?.let(features::add) ?: unknown.add(record.toUnknown(index))
@@ -277,7 +278,7 @@ class S57RawDecoder(
         // as a bogus cell name such as "1600". Decode the fixed prefix first.
         if (data.size < DSID_TEXT_OFFSET + 1) return BinaryDsidMetadata()
         val fields = data.terminatedTextFields(DSID_TEXT_OFFSET)
-        val cellName = fields.getOrNull(0).orEmpty().trim().takeIf { looksLikeS57CellName(it) }
+        val cellName = fields.getOrNull(0)?.let(::normalizeS57CellName)
         return BinaryDsidMetadata(
             cellName = cellName,
             edition = fields.getOrNull(1)?.trim()?.toIntOrNull(),
@@ -330,6 +331,12 @@ class S57RawDecoder(
         return result
     }
 
+    private fun normalizeS57CellName(value: String): String? {
+        val trimmed = value.trim().trimEnd('\u0000')
+        val withoutExtension = trimmed.substringBeforeLast('.', trimmed)
+        return withoutExtension.takeIf(::looksLikeS57CellName)
+    }
+
     private fun looksLikeS57CellName(value: String): Boolean {
         val trimmed = value.trim()
         return trimmed.length in 4..16 && trimmed.any { it.isLetter() } && trimmed.all { it.isLetterOrDigit() || it == '_' || it == '-' }
@@ -374,9 +381,11 @@ class S57RawDecoder(
     }
 
     private fun bestCellName(text: String): String {
-        val token = text.split(';', '|', ' ', '\u0000').firstOrNull { it.length in 3..32 && it.any(Char::isLetterOrDigit) }
+        val token = text.split(';', '|', ' ', '\u0000').firstNotNullOfOrNull(::normalizeS57CellName)
         return token.orEmpty()
     }
+
+    private fun Iso8211Record.isDataDescriptiveRecord(): Boolean = leader.leaderIdentifier == 'L'
 
     private fun String.printableOnly(): String = map { ch -> if (ch.code in 32..126) ch else ';' }.joinToString("").trim(';', ' ')
 

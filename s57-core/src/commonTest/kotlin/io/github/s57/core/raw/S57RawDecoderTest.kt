@@ -75,6 +75,23 @@ class S57RawDecoderTest {
         assertEquals(10, dataset.metadata.soundingMultiplier)
     }
 
+
+    @Test
+    fun ignoresDataDescriptiveRecordMetadataWhenDecodingNoaaCellName() {
+        val descriptorRecord = buildRecord(
+            listOf("DSID" to "1600;&   Data set identification field".bytesWithFieldTerminator()),
+            leaderIdentifier = 'L'
+        )
+        val dataRecord = buildRecord(
+            listOf("DSID" to dsid(cellName = "US5NYC3J.000", edition = 4, updateNumber = 0, issueDate = "20260120").withFieldTerminator())
+        )
+
+        val dataset = S57RawDecoder().decode(descriptorRecord + dataRecord)
+
+        assertEquals("US5NYC3J", dataset.metadata.cellName)
+        assertEquals(4, dataset.metadata.edition)
+    }
+
     @Test
     fun countsFeaturesByObjectClassAndBuildsFeatureStubs() {
         val bytes = buildRecord(listOf("FRID" to frid(100, 1, 3, 1, 42, 1, 1).withFieldTerminator())) +
@@ -162,7 +179,7 @@ class S57RawDecoderTest {
         ((value ushr 24) and 0xff).toByte()
     )
 
-    private fun buildRecord(fields: List<Pair<String, ByteArray>>): ByteArray {
+    private fun buildRecord(fields: List<Pair<String, ByteArray>>, leaderIdentifier: Char = 'D'): ByteArray {
         val tagSize = 4
         val lengthSize = 4
         val positionSize = 5
@@ -182,7 +199,7 @@ class S57RawDecoderTest {
         val leader = buildString {
             append(recordLength.toString().padStart(5, '0'))
             append('3')
-            append('D')
+            append(leaderIdentifier)
             append('L')
             append('1')
             append(' ')
