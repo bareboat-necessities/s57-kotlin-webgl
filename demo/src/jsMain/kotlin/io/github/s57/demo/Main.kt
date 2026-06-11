@@ -17,10 +17,13 @@ import io.github.s57.render.DepthMeshConfig
 import io.github.s57.render.Phase16Counters
 import io.github.s57.render.RenderPipelineDiagnosticReport
 import io.github.s57.render.S57EngineImportResult
+import io.github.s57.render.ScreenSize
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
 import io.github.s57.render.browserChartCacheSummary
 import io.github.s57.render.chartRenderRequestForCell
+import io.github.s57.render.chartViewportFitForBounds
+import io.github.s57.render.center
 import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
 import io.github.s57.render.pipelineDiagnosticReport
@@ -213,13 +216,38 @@ fun main() {
         }
     }
 
-    fun renderCell(cell: S57CellSummary, label: String) {
+    fun phase26SnapshotMode(): Boolean = window.asDynamic().s57Phase26SnapshotMode == true
+
+    fun snapshotBounds(cell: S57CellSummary, fraction: Double): GeoBounds? {
+        val bounds = cell.bounds ?: return null
+        val clamped = fraction.coerceIn(0.05, 1.0)
+        val center = bounds.center()
+        val halfLon = (bounds.maxLon - bounds.minLon) * clamped / 2.0
+        val halfLat = (bounds.maxLat - bounds.minLat) * clamped / 2.0
+        return GeoBounds(
+            minLon = center.lon - halfLon,
+            minLat = center.lat - halfLat,
+            maxLon = center.lon + halfLon,
+            maxLat = center.lat + halfLat
+        )
+    }
+
+    fun renderCell(cell: S57CellSummary, label: String, boundsFraction: Double? = null) {
         if (cell.bounds == null) {
             status?.textContent = "Cannot render " + label + ": cell has no bounds.\n" + importSummary()
             updateCellSummary()
             return
         }
-        val autoRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
+        val fullCellRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
+        val autoRequest = boundsFraction?.let { fraction ->
+            val bounds = snapshotBounds(cell, fraction) ?: fullCellRequest.bounds
+            val fit = chartViewportFitForBounds(bounds, ScreenSize(canvas.width, canvas.height), paddingFraction = 0.08)
+            fullCellRequest.copy(
+                bounds = fit.fittedBounds,
+                scaleDenominator = fit.scaleDenominator,
+                camera = fullCellRequest.camera.copy(center = fit.cameraCenter, zoom = fit.scaleDenominator)
+            )
+        } ?: fullCellRequest
         val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoRequest.scaleDenominator)
         activeScaleOverride = scale
         scaleInput.value = scale.roundToInt().toString()
@@ -234,7 +262,12 @@ fun main() {
             renderMode = ChartRenderMode.Flat2D
         )
         val result = engine.render(request)
-        val summary = renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
+        val summary = try {
+            renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
+        } catch (t: Throwable) {
+            val fallback = renderer.renderFrame("chartCanvas", result.frame)
+            fallback.copy(message = "S-52 structured render threw: " + (t.message ?: t.toString()) + "; " + fallback.message)
+        }
         val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
         val source = matchingImport?.sourceImport
         val counters = Phase16Counters(
@@ -292,8 +325,8 @@ fun main() {
         updateCellSummary()
     }
 
-    fun renderActive(label: String = "active cell") {
-        activeCell()?.let { renderCell(it, label) } ?: run {
+    fun renderActive(label: String = "active cell", boundsFraction: Double? = null) {
+        activeCell()?.let { renderCell(it, label, boundsFraction) } ?: run {
             status?.textContent = "No imported ENC cell is available. Select a .000 file first, restore cache, or use the sample button."
             updateCellSummary()
         }
@@ -327,11 +360,11 @@ fun main() {
         status?.textContent = "Cleared imported cells. Browser cache is unchanged."
     }
 
-    fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult, after: () -> Unit) {
+    fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult) {
         chartCache.put(fileName, bytes, imported) { result ->
             result.onFailure { failures = failures + (fileName + ": cache failed: " + (it.message ?: it.toString())) }
+            updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
             refreshCacheList()
-            after()
         }
     }
 
@@ -355,7 +388,11 @@ fun main() {
                 activeCellId = chooseInitialActiveCell(cells(), activeCellId)
                 updateCellSummary()
                 if (imports.isNotEmpty()) {
-                    renderActive("imported ENC")
+                    if (phase26SnapshotMode()) {
+                        status?.textContent = "Imported ENC cell is ready for Phase 26 CI snapshot rendering.\n" + importSummary()
+                    } else {
+                        renderActive("imported ENC")
+                    }
                 } else {
                     status?.textContent = importSummary()
                 }
@@ -373,11 +410,10 @@ fun main() {
                     try {
                         val imported = engine.importS57Bytes(bytes)
                         imports = imports + imported
-                        cacheImportedPayload(file.name, bytes, imported) {
-                            updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
-                            updateCellSummary()
-                            next(index + 1)
-                        }
+                        updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
+                        updateCellSummary()
+                        next(index + 1)
+                        cacheImportedPayload(file.name, bytes, imported)
                     } catch (t: Throwable) {
                         failures = failures + (file.name + ": " + (t.message ?: t.toString()))
                         next(index + 1)
@@ -469,9 +505,8 @@ fun main() {
                 selectedLabels = listOf("bundled: data/statue-liberty.000")
                 updateFileList()
                 updateCellSummary()
-                cacheImportedPayload("statue-liberty.000", buffer.toS57ByteArray(), imported) {
-                    renderActive("bundled NOAA demo")
-                }
+                renderActive("bundled NOAA demo")
+                cacheImportedPayload("statue-liberty.000", buffer.toS57ByteArray(), imported)
             },
             onFailure = { error ->
                 failures = failures + ("data/statue-liberty.000: " + (error.message ?: error.toString()))
@@ -499,6 +534,11 @@ fun main() {
             },
             { _: dynamic -> null }
         )
+    }
+
+    window.asDynamic().s57Phase26RenderSnapshot = {
+        renderActive("Phase 26 CI snapshot", boundsFraction = 0.35)
+        null
     }
 
     fun selectedInputFiles(): List<File> {

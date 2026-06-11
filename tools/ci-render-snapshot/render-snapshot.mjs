@@ -84,13 +84,17 @@ try {
   page.on('console', (message) => console.log(`[browser:${message.type()}] ${message.text()}`));
   page.on('pageerror', (error) => console.error(`[browser:error] ${error.message}`));
   await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { window.s57Phase26SnapshotMode = true; });
   await page.locator('#fileInput').setInputFiles(encFile);
   await page.waitForFunction(() => {
     const select = document.querySelector('#cellSelect');
     return Boolean(select && select.value);
   }, null, { timeout: 90000 });
   if (!(await page.evaluate(() => Boolean(window.s57Phase26RenderReady)))) {
-    await page.locator('#renderButton').click();
+    await page.evaluate(() => {
+      if (typeof window.s57Phase26RenderSnapshot === 'function') window.s57Phase26RenderSnapshot();
+      else document.querySelector('#renderButton')?.click();
+    });
   }
   try {
     await page.waitForFunction(() => Boolean(window.s57Phase26RenderReady), null, { timeout: 90000 });
