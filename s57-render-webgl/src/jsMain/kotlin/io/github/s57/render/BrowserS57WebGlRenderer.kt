@@ -7,6 +7,7 @@ import org.khronos.webgl.WebGLProgram
 import org.khronos.webgl.WebGLRenderingContext
 import org.khronos.webgl.WebGLShader
 import org.khronos.webgl.WebGLUniformLocation
+import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
 
 class BrowserS57WebGlRenderer(
@@ -63,7 +64,12 @@ class BrowserS57WebGlRenderer(
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
         val rawGl = canvas.getContext("webgl") ?: canvas.getContext("webgl2")
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", frame.request.camera)
+            ?: return renderFrame2d(
+                canvas = canvas,
+                frame = frame,
+                clearCanvas = true,
+                messagePrefix = "Canvas2D fallback frame rendered because WebGL is not available"
+            )
         val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)
@@ -87,7 +93,14 @@ class BrowserS57WebGlRenderer(
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
         val rawGl = canvas.getContext("webgl") ?: canvas.getContext("webgl2")
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", frame.request.camera)
+            ?: return renderFrame2d(
+                canvas = canvas,
+                frame = frame,
+                clearCanvas = false,
+                includePointGlyphs = includePointGlyphs,
+                includeSoundingPointGlyphs = includeSoundingPointGlyphs,
+                messagePrefix = "Canvas2D decoded geometry overlay rendered because WebGL is not available"
+            )
         val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)
@@ -95,6 +108,200 @@ class BrowserS57WebGlRenderer(
         program.use()
         val counts = drawDecodedGeometry(program, canvas, frame, includePointGlyphs, includeSoundingPointGlyphs)
         return frame.summary().copy(message = "decoded geometry overlay rendered " + counts.toMessage())
+    }
+
+    private fun renderFrame2d(
+        canvas: HTMLCanvasElement,
+        frame: StaticChartFrame,
+        clearCanvas: Boolean,
+        includePointGlyphs: Boolean = true,
+        includeSoundingPointGlyphs: Boolean = true,
+        messagePrefix: String
+    ): RenderedFrameSummary {
+        val context = canvas.getContext("2d") as? CanvasRenderingContext2D
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL and Canvas2D are not available", frame.request.camera)
+        if (clearCanvas) {
+            context.fillStyle = "rgba(209, 230, 245, 1.0)"
+            context.fillRect(0.0, 0.0, canvas.width.toDouble(), canvas.height.toDouble())
+        }
+        context.asDynamic().lineCap = "round"
+        context.asDynamic().lineJoin = "round"
+        val counts = drawDecodedGeometry2d(context, frame, includePointGlyphs, includeSoundingPointGlyphs)
+        if (frame.request.centerCrosshair.enabled) drawCrosshair2d(context, canvas, frame.request.centerCrosshair.sizePx)
+        return frame.summary().copy(message = "$messagePrefix features=${frame.featureCount} " + counts.toMessage())
+    }
+
+    private fun drawDecodedGeometry2d(
+        context: CanvasRenderingContext2D,
+        frame: StaticChartFrame,
+        includePointGlyphs: Boolean,
+        includeSoundingPointGlyphs: Boolean
+    ): GeometryDrawCounts {
+        val counts = GeometryDrawCounts()
+        for (feature in frame.projectedFeatures.sortedForChartReadability()) {
+            when (val geometry = feature.geometry) {
+                is ProjectedGeometry.Empty -> Unit
+                is ProjectedGeometry.Point -> {
+                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                        drawPointGlyph2d(context, geometry.point, feature.objectClass, colorFor(feature.objectClass))
+                        counts.points++
+                    }
+                }
+                is ProjectedGeometry.MultiPoint -> {
+                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                        geometry.points.forEach { point ->
+                            drawPointGlyph2d(context, point, feature.objectClass, colorFor(feature.objectClass))
+                        }
+                        counts.points += geometry.points.size
+                    }
+                }
+                is ProjectedGeometry.LineString -> {
+                    if (geometry.points.size >= 2) {
+                        strokePath2d(
+                            context,
+                            geometry.points,
+                            colorFor(feature.objectClass),
+                            lineWidthFor(feature.objectClass),
+                            closePath = false
+                        )
+                        counts.lines++
+                    }
+                }
+                is ProjectedGeometry.Polygon -> {
+                    if (drawPolygon2d(context, geometry, feature.objectClass)) counts.areas++
+                }
+                is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { polygon ->
+                    if (drawPolygon2d(context, polygon, feature.objectClass)) counts.areas++
+                }
+            }
+        }
+        return counts
+    }
+
+    private fun drawPolygon2d(
+        context: CanvasRenderingContext2D,
+        polygon: ProjectedGeometry.Polygon,
+        objectClass: String
+    ): Boolean {
+        val outer = polygon.rings.firstOrNull().orEmpty()
+        if (outer.size < 3) return false
+        fillPath2d(context, outer, fillColorFor(objectClass))
+        polygon.rings.forEach { ring ->
+            if (ring.size >= 2) {
+                strokePath2d(context, ring.closedForStroke(), colorFor(objectClass), lineWidthFor(objectClass), closePath = false)
+            }
+        }
+        return true
+    }
+
+    private fun drawPointGlyph2d(
+        context: CanvasRenderingContext2D,
+        point: ScreenPoint,
+        objectClass: String,
+        color: FloatArray
+    ) {
+        val normalized = objectClass.uppercase()
+        val size = when (normalized) {
+            "SOUNDG" -> 3.2
+            "LIGHTS" -> 10.0
+            "WRECKS", "OBSTRN" -> 9.0
+            "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB",
+            "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD" -> 8.5
+            else -> 7.5
+        }
+        val halo = floatArrayOf(1.0f, 1.0f, 1.0f, 0.92f)
+        if (normalized != "SOUNDG") drawPointGlyphShape2d(context, point, objectClass, halo, size + 2.4)
+        drawPointGlyphShape2d(context, point, objectClass, color, size)
+        if (normalized in setOf("BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB")) {
+            strokePath2d(context, listOf(ScreenPoint(point.x, point.y + size), ScreenPoint(point.x, point.y + size * 1.9)), color, 1.5, closePath = false)
+        }
+        if (normalized in setOf("BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD")) {
+            strokePath2d(context, listOf(ScreenPoint(point.x, point.y + size), ScreenPoint(point.x, point.y + size * 2.1)), color, 1.5, closePath = false)
+            strokePath2d(context, listOf(ScreenPoint(point.x - size * 0.45, point.y + size * 2.1), ScreenPoint(point.x + size * 0.45, point.y + size * 2.1)), color, 1.5, closePath = false)
+        }
+    }
+
+    private fun drawPointGlyphShape2d(
+        context: CanvasRenderingContext2D,
+        point: ScreenPoint,
+        objectClass: String,
+        color: FloatArray,
+        size: Double
+    ) {
+        when (objectClass.uppercase()) {
+            "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB" -> {
+                val diamond = listOf(
+                    ScreenPoint(point.x, point.y - size),
+                    ScreenPoint(point.x + size, point.y),
+                    ScreenPoint(point.x, point.y + size),
+                    ScreenPoint(point.x - size, point.y)
+                )
+                fillPath2d(context, diamond, color.withAlpha(0.28f))
+                strokePath2d(context, diamond, color, 1.6, closePath = true)
+            }
+            "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD" -> {
+                val triangle = listOf(
+                    ScreenPoint(point.x, point.y - size),
+                    ScreenPoint(point.x + size, point.y + size),
+                    ScreenPoint(point.x - size, point.y + size)
+                )
+                fillPath2d(context, triangle, color.withAlpha(0.24f))
+                strokePath2d(context, triangle, color, 1.6, closePath = true)
+            }
+            "LIGHTS" -> {
+                fillCircle2d(context, point, size * 0.36, color.withAlpha(0.30f))
+                strokePath2d(context, listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), color, 1.5, closePath = false)
+                strokePath2d(context, listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), color, 1.5, closePath = false)
+                strokePath2d(context, listOf(ScreenPoint(point.x - size * 0.7, point.y - size * 0.7), ScreenPoint(point.x + size * 0.7, point.y + size * 0.7)), color, 1.5, closePath = false)
+                strokePath2d(context, listOf(ScreenPoint(point.x - size * 0.7, point.y + size * 0.7), ScreenPoint(point.x + size * 0.7, point.y - size * 0.7)), color, 1.5, closePath = false)
+            }
+            "WRECKS", "OBSTRN" -> {
+                strokePath2d(context, listOf(ScreenPoint(point.x - size, point.y - size), ScreenPoint(point.x + size, point.y + size)), color, 1.0, closePath = false)
+                strokePath2d(context, listOf(ScreenPoint(point.x - size, point.y + size), ScreenPoint(point.x + size, point.y - size)), color, 1.0, closePath = false)
+            }
+            "SOUNDG" -> fillCircle2d(context, point, size, color)
+            else -> {
+                fillCircle2d(context, point, size * 0.55, color.withAlpha(0.25f))
+                strokePath2d(context, listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), color, 1.4, closePath = false)
+                strokePath2d(context, listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), color, 1.4, closePath = false)
+            }
+        }
+    }
+
+    private fun drawCrosshair2d(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, size: Double) {
+        val cx = canvas.width / 2.0
+        val cy = canvas.height / 2.0
+        val color = floatArrayOf(0.0f, 0.0f, 0.0f, 0.85f)
+        strokePath2d(context, listOf(ScreenPoint(cx - size, cy), ScreenPoint(cx + size, cy)), color, 1.0, closePath = false)
+        strokePath2d(context, listOf(ScreenPoint(cx, cy - size), ScreenPoint(cx, cy + size)), color, 1.0, closePath = false)
+    }
+
+    private fun fillPath2d(context: CanvasRenderingContext2D, points: List<ScreenPoint>, color: FloatArray) {
+        if (points.size < 3) return
+        context.beginPath()
+        context.moveTo(points.first().x, points.first().y)
+        points.drop(1).forEach { point -> context.lineTo(point.x, point.y) }
+        context.closePath()
+        context.fillStyle = color.toCssRgba()
+        context.fill()
+    }
+
+    private fun strokePath2d(context: CanvasRenderingContext2D, points: List<ScreenPoint>, color: FloatArray, lineWidth: Double, closePath: Boolean) {
+        if (points.size < 2) return
+        context.beginPath()
+        context.moveTo(points.first().x, points.first().y)
+        points.drop(1).forEach { point -> context.lineTo(point.x, point.y) }
+        if (closePath) context.closePath()
+        context.strokeStyle = color.toCssRgba()
+        context.lineWidth = lineWidth
+        context.stroke()
+    }
+
+    private fun fillCircle2d(context: CanvasRenderingContext2D, center: ScreenPoint, radiusPx: Double, color: FloatArray) {
+        context.beginPath()
+        context.arc(center.x, center.y, radiusPx, 0.0, kotlin.math.PI * 2.0)
+        context.fillStyle = color.toCssRgba()
+        context.fill()
     }
 
     private fun drawDecodedGeometry(
@@ -353,3 +560,11 @@ private fun compileShader(gl: WebGLRenderingContext, type: Int, source: String):
 }
 
 private fun FloatArray.withAlpha(alpha: Float): FloatArray = floatArrayOf(this[0], this[1], this[2], alpha)
+
+private fun FloatArray.toCssRgba(): String {
+    val red = (this[0].coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+    val green = (this[1].coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+    val blue = (this[2].coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+    val alpha = this[3].coerceIn(0.0f, 1.0f)
+    return "rgba($red, $green, $blue, $alpha)"
+}

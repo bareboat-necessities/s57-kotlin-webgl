@@ -1,5 +1,8 @@
 package io.github.s57.render
 
+val S52RenderSummary.usedGeometryFallback: Boolean
+    get() = diagnostics.any { it.code == "s52.geometry_fallback" }
+
 /**
  * Browser S-52 rendering is the preferred path, but the viewer must not leave a
  * successfully decoded/projected chart as a plain blue background when S-52
