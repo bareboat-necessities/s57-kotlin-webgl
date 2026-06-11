@@ -28,8 +28,8 @@ data class Phase16Counters(
         onscreenFeatures == 0 && offscreenFeatures > 0 -> "viewport"
         visibleFeatures == 0 -> "visible-geometry"
         adaptedFeatures == 0 -> "adapter"
-        s52.failureStage != "none" -> s52.failureStage
-        !s52.hasCommands -> "s52-portrayal"
+        s52.failureStage != "none" && !s52.usedGeometryFallback -> s52.failureStage
+        !s52.hasCommands && !s52.usedGeometryFallback -> "s52-portrayal"
         else -> "none"
     }
 }

@@ -54,6 +54,35 @@ class Phase16DiagnosticsTest {
     }
 
     @Test
+    fun reportsNoneWhenDecodedGeometryFallbackRecoveredFromS52Failure() {
+        val fallbackDiagnostic = RenderPipelineDiagnostic(
+            stage = RenderPipelineStage.WebGl,
+            severity = RenderPipelineSeverity.Warning,
+            code = "s52.geometry_fallback",
+            message = "S-52 WebGL render failed: WebGL2 is not available"
+        )
+        val counters = Phase16Counters(
+            rawFeatures = 4,
+            decodedFeatures = 4,
+            hasBounds = true,
+            indexedFeatures = 4,
+            queriedFeatures = 4,
+            adaptedFeatures = 4,
+            projectedFeatures = 4,
+            visibleFeatures = 4,
+            s52 = S52RenderSummary(
+                encFeatureCount = 4,
+                commandCount = 0,
+                failureStage = "webgl2",
+                diagnosticCount = 1,
+                diagnostics = listOf(fallbackDiagnostic)
+            )
+        )
+
+        assertEquals("none", counters.stage())
+    }
+
+    @Test
     fun reportsNoneWhenPipelineHasVisibleFeaturesAndS52Commands() {
         val counters = Phase16Counters(
             rawFeatures = 4,
