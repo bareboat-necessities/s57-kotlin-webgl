@@ -3,6 +3,7 @@ package io.github.s57.render
 import io.github.s52.render.webgl.RenderViewport
 import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlin.js.console
 import org.w3c.dom.HTMLCanvasElement
 
@@ -59,6 +60,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         north = frame.request.bounds.maxLat
     )
     val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
+    window.asDynamic().s57S52ResourceRenderReady = false
 
     return try {
         var renderer: WebGlS52Renderer? = null
@@ -66,6 +68,10 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             val readyRenderer = renderer ?: return@WebGlS52Renderer
             try {
                 val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
+                window.asDynamic().s57S52ResourceRenderReady = true
+                val previousReadyRenderCount =
+                    (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
+                window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
                 val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
                 if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
                     renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)

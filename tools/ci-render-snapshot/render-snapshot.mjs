@@ -113,6 +113,14 @@ try {
   if (!report || report.schemaVersion == null || !Array.isArray(report.diagnostics)) {
     throw new Error('Malformed Phase 26 diagnostics JSON');
   }
+  if (Number(report?.counters?.s52DrawCalls ?? 0) > 0) {
+    await page.waitForFunction(
+      () => Boolean(window.s57S52ResourceRenderReady) || Number(window.s57S52ResourceRenderCount || 0) > 0,
+      null,
+      { timeout: 10000 }
+    ).catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
   const canvas = page.locator('#chartCanvas');
   await canvas.screenshot({ path: path.join(outDir, 'render.png') });
   if (!existsSync(path.join(outDir, 'render.png')) || statSync(path.join(outDir, 'render.png')).size <= 0) {
