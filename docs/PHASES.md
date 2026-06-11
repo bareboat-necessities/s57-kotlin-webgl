@@ -230,3 +230,13 @@ Acceptance targets:
 - S-52 symbol, line style, pattern, text, and color fallbacks are counted and exported;
 - the demo can export diagnostics JSON and PNG snapshots;
 - GitHub Actions downloads the first usable public ENC cell, renders it headlessly, and uploads PNG plus diagnostics artifacts.
+
+## Phase 27 — viewport catalog, quilting, and performance
+
+Plans the performance layer above decoded feature storage: cheap cached catalog
+scans for uploaded ENC portfolios, M_COVR-first footprints, viewport/zoom-based
+cell selection, band-major gap-fill quilting, parsed-cell LRU caching,
+per-region clipping, and diagnostics for selection/cache/render costs.
+
+See `docs/PHASE27_VIEWPORT_CATALOG_AND_PERFORMANCE_PLAN.md` for the detailed
+roadmap.
