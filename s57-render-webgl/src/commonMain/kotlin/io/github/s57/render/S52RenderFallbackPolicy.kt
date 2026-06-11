@@ -31,21 +31,21 @@ fun S52RenderSummary.hasOnlyPointLikeCommands(): Boolean {
 }
 
 /**
- * Even when S-52 reports successful draw calls, the bundled/development S-52
- * WebGL path can visually degrade to marker dots if symbol/line resources are
- * incomplete or if the renderer counts commands before real path geometry is
- * emitted. Keep decoded ENC geometry and object-symbol hints visible as a
- * browser overlay whenever real chart features exist and S-52 reached the GPU.
+ * Do not draw the decoded-geometry debug overlay over a successful S-52 frame.
+ *
+ * The overlay uses simplified in-repository colors, line styles, point glyphs,
+ * and segment-rendered sounding labels.  Those are useful as a last-resort
+ * fallback when S-52 cannot draw, but they must not cover the OpenCPN
+ * presentation-library symbols after S-52 has produced GPU output.  Painting the
+ * overlay on top of successful S-52 frames makes the browser view diverge from
+ * the selected OpenCPN symbology pack and also exposes browser-dependent text
+ * and color differences.
  */
+@Suppress("UNUSED_PARAMETER")
 fun S52RenderSummary.shouldOverlayDecodedGeometry(
     projectedSourceFeatureCount: Int,
     projectedLinearOrAreaFeatureCount: Int
-): Boolean {
-    if (projectedSourceFeatureCount <= 0) return false
-    if (failureStage != "none") return false
-    if (drawCallCount <= 0) return false
-    return true
-}
+): Boolean = false
 
 fun s52FallbackMessage(reason: String, fallbackMessage: String): String =
     reason + "; fallback geometry render: " + fallbackMessage
