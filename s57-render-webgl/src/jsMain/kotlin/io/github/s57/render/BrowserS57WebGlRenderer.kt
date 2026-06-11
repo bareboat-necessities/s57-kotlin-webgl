@@ -162,10 +162,25 @@ class BrowserS57WebGlRenderer(
         objectClass: String,
         color: FloatArray
     ) {
-        val size = if (objectClass.uppercase() == "SOUNDG") 3.0 else 6.5
-        val halo = floatArrayOf(1.0f, 1.0f, 1.0f, 0.9f)
-        if (objectClass.uppercase() != "SOUNDG") drawPointGlyphShape(program, point, canvas, objectClass, halo, size + 2.0)
+        val normalized = objectClass.uppercase()
+        val size = when (normalized) {
+            "SOUNDG" -> 3.2
+            "LIGHTS" -> 10.0
+            "WRECKS", "OBSTRN" -> 9.0
+            "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB",
+            "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD" -> 8.5
+            else -> 7.5
+        }
+        val halo = floatArrayOf(1.0f, 1.0f, 1.0f, 0.92f)
+        if (normalized != "SOUNDG") drawPointGlyphShape(program, point, canvas, objectClass, halo, size + 2.4)
         drawPointGlyphShape(program, point, canvas, objectClass, color, size)
+        if (normalized in setOf("BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB")) {
+            program.drawLineStrip(listOf(ScreenPoint(point.x, point.y + size), ScreenPoint(point.x, point.y + size * 1.9)), canvas, color, 1.5)
+        }
+        if (normalized in setOf("BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD")) {
+            program.drawLineStrip(listOf(ScreenPoint(point.x, point.y + size), ScreenPoint(point.x, point.y + size * 2.1)), canvas, color, 1.5)
+            program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.45, point.y + size * 2.1), ScreenPoint(point.x + size * 0.45, point.y + size * 2.1)), canvas, color, 1.5)
+        }
     }
 
     private fun drawPointGlyphShape(
@@ -178,43 +193,44 @@ class BrowserS57WebGlRenderer(
     ) {
         when (objectClass.uppercase()) {
             "BOYLAT", "BOYCAR", "BOYSAW", "BOYISD", "BOYSPP", "BOYINB" -> {
-                program.drawLineStrip(
-                    listOf(
-                        ScreenPoint(point.x, point.y - size),
-                        ScreenPoint(point.x + size, point.y),
-                        ScreenPoint(point.x, point.y + size),
-                        ScreenPoint(point.x - size, point.y),
-                        ScreenPoint(point.x, point.y - size)
-                    ),
-                    canvas,
-                    color
+                val diamond = listOf(
+                    ScreenPoint(point.x, point.y - size),
+                    ScreenPoint(point.x + size, point.y),
+                    ScreenPoint(point.x, point.y + size),
+                    ScreenPoint(point.x - size, point.y),
+                    ScreenPoint(point.x, point.y - size)
                 )
+                program.drawTriangleFan(diamond.dropLast(1), canvas, color.withAlpha(0.28f))
+                program.drawLineStrip(diamond, canvas, color, 1.6)
             }
             "BCNLAT", "BCNCAR", "BCNSAW", "BCNSPP", "BCNISD" -> {
-                program.drawLineStrip(
-                    listOf(
-                        ScreenPoint(point.x, point.y - size),
-                        ScreenPoint(point.x + size, point.y + size),
-                        ScreenPoint(point.x - size, point.y + size),
-                        ScreenPoint(point.x, point.y - size)
-                    ),
-                    canvas,
-                    color
+                val triangle = listOf(
+                    ScreenPoint(point.x, point.y - size),
+                    ScreenPoint(point.x + size, point.y + size),
+                    ScreenPoint(point.x - size, point.y + size),
+                    ScreenPoint(point.x, point.y - size)
                 )
+                program.drawTriangleFan(triangle.dropLast(1), canvas, color.withAlpha(0.24f))
+                program.drawLineStrip(triangle, canvas, color, 1.6)
             }
             "LIGHTS" -> {
-                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color)
-                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color)
-                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y - size * 0.7), ScreenPoint(point.x + size * 0.7, point.y + size * 0.7)), canvas, color)
-                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y + size * 0.7), ScreenPoint(point.x + size * 0.7, point.y - size * 0.7)), canvas, color)
+                program.drawCircle(point, size * 0.36, canvas, color.withAlpha(0.30f), 12)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color, 1.5)
+                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color, 1.5)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y - size * 0.7), ScreenPoint(point.x + size * 0.7, point.y + size * 0.7)), canvas, color, 1.5)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size * 0.7, point.y + size * 0.7), ScreenPoint(point.x + size * 0.7, point.y - size * 0.7)), canvas, color, 1.5)
             }
             "WRECKS", "OBSTRN" -> {
                 program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y - size), ScreenPoint(point.x + size, point.y + size)), canvas, color)
                 program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y + size), ScreenPoint(point.x + size, point.y - size)), canvas, color)
             }
+            "SOUNDG" -> {
+                program.drawCircle(point, size, canvas, color, 10)
+            }
             else -> {
-                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color)
-                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color)
+                program.drawCircle(point, size * 0.55, canvas, color.withAlpha(0.25f), 12)
+                program.drawLineStrip(listOf(ScreenPoint(point.x - size, point.y), ScreenPoint(point.x + size, point.y)), canvas, color, 1.4)
+                program.drawLineStrip(listOf(ScreenPoint(point.x, point.y - size), ScreenPoint(point.x, point.y + size)), canvas, color, 1.4)
             }
         }
     }
@@ -287,6 +303,16 @@ private class BrowserSimpleColorProgram(
         draw(WebGLRenderingContext.TRIANGLE_FAN, points, canvas, color)
     }
 
+    fun drawCircle(center: ScreenPoint, radiusPx: Double, canvas: HTMLCanvasElement, color: FloatArray, segments: Int = 16) {
+        val points = mutableListOf(center)
+        val segmentCount = segments.coerceAtLeast(8)
+        for (index in 0..segmentCount) {
+            val angle = (index.toDouble() / segmentCount.toDouble()) * kotlin.math.PI * 2.0
+            points += ScreenPoint(center.x + kotlin.math.cos(angle) * radiusPx, center.y + kotlin.math.sin(angle) * radiusPx)
+        }
+        draw(WebGLRenderingContext.TRIANGLE_FAN, points, canvas, color)
+    }
+
     private fun draw(mode: Int, points: List<ScreenPoint>, canvas: HTMLCanvasElement, color: FloatArray, lineWidth: Double = 1.0) {
         if (points.isEmpty()) return
         val dataValues = Array(points.size * 2) { 0.0f }
@@ -325,3 +351,5 @@ private fun compileShader(gl: WebGLRenderingContext, type: Int, source: String):
     gl.compileShader(shader)
     return shader
 }
+
+private fun FloatArray.withAlpha(alpha: Float): FloatArray = floatArrayOf(this[0], this[1], this[2], alpha)
