@@ -8,16 +8,18 @@ import io.github.s57.render.BrowserChartInput
 import io.github.s57.render.BrowserS57FileImporter
 import io.github.s57.render.BrowserS57WebGlRenderer
 import io.github.s57.render.CachedChartPayload
-import io.github.s57.render.CenterCrosshairConfig
 import io.github.s57.render.ChartInteractionController
 import io.github.s57.render.ChartInteractionListener
-import io.github.s57.render.ChartRenderMode
 import io.github.s57.render.ChartUserEvent
-import io.github.s57.render.DepthMeshConfig
+import io.github.s57.render.ChartCanvasCommand
+import io.github.s57.render.ChartCanvasEvent
+import io.github.s57.render.ChartCanvasFrameRenderer
+import io.github.s57.render.ScreenDelta
 import io.github.s57.render.Phase16Counters
 import io.github.s57.render.RenderPipelineDiagnosticReport
 import io.github.s57.render.S57EngineImportResult
 import io.github.s57.render.ScreenSize
+import io.github.s57.render.S57ChartCanvas
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
 import io.github.s57.render.browserChartCacheSummary
@@ -81,15 +83,45 @@ fun main() {
     status?.parentElement?.appendChild(cacheHeading)
     status?.parentElement?.appendChild(cacheList)
 
-    BrowserChartInput(ChartInteractionController(listener = object : ChartInteractionListener {
-        override fun onUserEvent(event: ChartUserEvent) {
-            events?.textContent = event.toString()
-        }
-    })).attach("chartCanvas")
-
     val engine = S57WebGlEngine()
     val importer = BrowserS57FileImporter(engine)
     val renderer = BrowserS57WebGlRenderer()
+    var latestCanvasRender: ChartCanvasEvent.ChartRendered? = null
+    val chartCanvas = S57ChartCanvas(
+        engine = engine,
+        frameRenderer = ChartCanvasFrameRenderer { frame ->
+            try {
+                renderer.renderS52FrameWithSummary("chartCanvas", frame)
+            } catch (t: Throwable) {
+                val fallback = renderer.renderFrame("chartCanvas", frame)
+                fallback.copy(message = "S-52 structured render threw: " + (t.message ?: t.toString()) + "; " + fallback.message)
+            }
+        },
+        initialSize = ScreenSize(canvas.width, canvas.height),
+        initialPaletteName = normalizePaletteName(paletteSelect.value)
+    )
+    chartCanvas.addListener { event ->
+        when (event) {
+            is ChartCanvasEvent.ChartRendered -> latestCanvasRender = event
+            is ChartCanvasEvent.ObjectSelected -> events?.textContent = "selected " + event.hit.displayName + " at " + event.point
+            is ChartCanvasEvent.Pressed -> events?.textContent = "pressed " + event.point + " hits=" + event.hits.size
+            is ChartCanvasEvent.CursorMoved -> events?.textContent = "cursor=" + event.point + " geo=" + event.geoPoint
+            is ChartCanvasEvent.CommandRejected -> events?.textContent = "canvas command rejected: " + event.reason
+            is ChartCanvasEvent.StatusChanged -> Unit
+        }
+    }
+    BrowserChartInput(ChartInteractionController(listener = object : ChartInteractionListener {
+        override fun onUserEvent(event: ChartUserEvent) {
+            when (event) {
+                is ChartUserEvent.ClickObject -> chartCanvas.dispatch(ChartCanvasCommand.Press(event.point))
+                is ChartUserEvent.TouchObject -> chartCanvas.dispatch(ChartCanvasCommand.Press(event.point))
+                is ChartUserEvent.Drag -> chartCanvas.dispatch(ChartCanvasCommand.Scroll(ScreenDelta(-event.delta.dx, -event.delta.dy)))
+                is ChartUserEvent.Zoom -> chartCanvas.dispatch(ChartCanvasCommand.Zoom(event.factor, event.focus))
+                is ChartUserEvent.Scroll -> chartCanvas.dispatch(ChartCanvasCommand.Scroll(event.delta))
+                else -> events?.textContent = event.toString()
+            }
+        }
+    })).attach("chartCanvas")
     val chartCache = BrowserChartIndexedDbCache()
     var imports = emptyList<S57EngineImportResult>()
     var failures = emptyList<String>()
@@ -238,36 +270,32 @@ fun main() {
             updateCellSummary()
             return
         }
+        chartCanvas.dispatch(ChartCanvasCommand.Resize(ScreenSize(canvas.width, canvas.height)))
+        chartCanvas.dispatch(ChartCanvasCommand.ShowCharts(listOf(cell.cellId), fitToFirstChart = true))
         val fullCellRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
-        val autoRequest = boundsFraction?.let { fraction ->
+        val autoScale = boundsFraction?.let { fraction ->
             val bounds = snapshotBounds(cell, fraction) ?: fullCellRequest.bounds
             val fit = chartViewportFitForBounds(bounds, ScreenSize(canvas.width, canvas.height), paddingFraction = 0.08)
-            fullCellRequest.copy(
-                bounds = fit.fittedBounds,
-                scaleDenominator = fit.scaleDenominator,
-                camera = fullCellRequest.camera.copy(center = fit.cameraCenter, zoom = fit.scaleDenominator)
-            )
-        } ?: fullCellRequest
-        val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoRequest.scaleDenominator)
+            chartCanvas.dispatch(ChartCanvasCommand.SetView(fit.fittedBounds, fit.scaleDenominator))
+            fit.scaleDenominator
+        } ?: chartCanvas.status().scaleDenominator ?: fullCellRequest.scaleDenominator
+        val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoScale)
         activeScaleOverride = scale
         scaleInput.value = scale.roundToInt().toString()
         val palette = normalizePaletteName(paletteSelect.value)
         paletteSelect.value = palette
-        val request = autoRequest.copy(
-            scaleDenominator = scale,
-            camera = autoRequest.camera.copy(zoom = scale),
-            paletteName = palette,
-            centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
-            depthMesh = DepthMeshConfig(enabled = false),
-            renderMode = ChartRenderMode.Flat2D
-        )
-        val result = engine.render(request)
-        val summary = try {
-            renderer.renderS52FrameWithSummary("chartCanvas", result.frame)
-        } catch (t: Throwable) {
-            val fallback = renderer.renderFrame("chartCanvas", result.frame)
-            fallback.copy(message = "S-52 structured render threw: " + (t.message ?: t.toString()) + "; " + fallback.message)
+        latestCanvasRender = null
+        chartCanvas.dispatch(ChartCanvasCommand.SetPalette(palette))
+        chartCanvas.dispatch(ChartCanvasCommand.SetScale(scale))
+        chartCanvas.dispatch(ChartCanvasCommand.Render(label))
+        val rendered = latestCanvasRender
+        if (rendered == null) {
+            status?.textContent = "Chart canvas did not render " + label + "."
+            updateCellSummary()
+            return
         }
+        val result = rendered.result
+        val summary = rendered.drawing
         val matchingImport = imports.lastOrNull { it.cell.cellId == cell.cellId }
         val source = matchingImport?.sourceImport
         val counters = Phase16Counters(
@@ -291,18 +319,24 @@ fun main() {
         val pipelineDiagnostics = counters.toRenderPipelineDiagnostics(cell.cellId)
             .plus(result.diagnostics.toRenderPipelineDiagnostics(cell.cellId))
         val renderReport = summary.pipelineDiagnosticReport(cell.cellId, palette, scale)
+        val canvasStatus = chartCanvas.status()
         val combinedReport = pipelineDiagnostics
             .plus(renderReport)
             .withContext(
                 cellId = cell.cellId,
                 palette = palette,
                 scaleDenominator = scale,
-                metadata = mapOf("label" to label, "bounds" to request.bounds.toString())
+                metadata = mapOf(
+                    "label" to label,
+                    "bounds" to (canvasStatus.bounds?.toString() ?: "none"),
+                    "chartCanvas" to canvasStatus.toString()
+                )
             )
         publishPhase26Report(combinedReport)
         status?.textContent = buildString {
             appendLine("Rendered " + label + " cell=" + cell.cellId)
-            appendLine("viewportFit bounds=" + request.bounds + " scale=" + request.scaleDenominator + " palette=" + request.paletteName)
+            appendLine("chartCanvas displayed=" + canvasStatus.displayedChartIds.joinToString(",") + " cursor=" + canvasStatus.cursor + " center=" + canvasStatus.center)
+            appendLine("viewportFit bounds=" + canvasStatus.bounds + " scale=" + canvasStatus.scaleDenominator + " palette=" + canvasStatus.paletteName)
             appendLine("Phase16 diagnostics:")
             appendLine(counters.toPlainText())
             if (pipelineDiagnostics.diagnostics.isNotEmpty()) {
