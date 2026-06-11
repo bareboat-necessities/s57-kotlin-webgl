@@ -35,6 +35,7 @@ data class S52RenderSummary(
     val profile: String = "none",
     val encFeatureCount: Int = 0,
     val commandCount: Int = 0,
+    val rasterCommandCount: Int = 0,
     val drawCallCount: Int = 0,
     val areaCommandCount: Int = 0,
     val lineCommandCount: Int = 0,

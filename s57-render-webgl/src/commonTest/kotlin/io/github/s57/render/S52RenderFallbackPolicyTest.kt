@@ -18,6 +18,22 @@ class S52RenderFallbackPolicyTest {
         assertTrue(s52.needsGeometryFallback(projectedSourceFeatureCount = 4))
     }
 
+
+    @Test
+    fun doesNotFallbackWhileOpenCpnRasterAtlasIsLoading() {
+        val s52 = S52RenderSummary(
+            profile = "OpenCpn",
+            encFeatureCount = 4,
+            commandCount = 4,
+            rasterCommandCount = 4,
+            drawCallCount = 0,
+            symbolCommandCount = 4,
+            failureStage = "none"
+        )
+
+        assertFalse(s52.needsGeometryFallback(projectedSourceFeatureCount = 4))
+    }
+
     @Test
     fun usesFallbackWhenPortrayalRejectsProjectedFeatures() {
         val s52 = S52RenderSummary(

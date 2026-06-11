@@ -138,13 +138,24 @@ try {
   if (!report || report.schemaVersion == null || !Array.isArray(report.diagnostics)) {
     throw new Error('Malformed Phase 26 diagnostics JSON');
   }
-  if (Number(report?.counters?.s52DrawCalls ?? 0) > 0) {
+  const initialS52DrawCalls = Number(report?.counters?.s52DrawCalls ?? 0) || 0;
+  const rasterCommandsFromReport = Number(report?.counters?.s52RasterCommands ?? 0) || 0;
+  const rasterCommandsFromWindow = await page.evaluate(() => Number(window.s57S52RasterCommandCount || 0) || 0);
+  const rasterCommands = Math.max(rasterCommandsFromReport, rasterCommandsFromWindow);
+  if (rasterCommands > 0) {
     await assertS52OpenCpnAtlasPresent(page);
     await page.waitForFunction(
       () => Boolean(window.s57S52ResourceRenderReady) || Number(window.s57S52ResourceRenderCount || 0) > 0,
       null,
-      { timeout: 10000 }
+      { timeout: 30000 }
+    );
+    await page.waitForFunction(
+      () => Number(window.s57S52LastResourceDrawCalls || 0) > 0 || Number(window.s57S52InitialDrawCalls || 0) > 0,
+      null,
+      { timeout: 30000 }
     ).catch(() => undefined);
+    await page.waitForTimeout(250);
+  } else if (initialS52DrawCalls > 0) {
     await page.waitForTimeout(250);
   }
   const canvas = page.locator('#chartCanvas');

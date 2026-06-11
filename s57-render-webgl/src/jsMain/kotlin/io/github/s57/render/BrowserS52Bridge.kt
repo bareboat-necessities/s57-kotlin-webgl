@@ -49,7 +49,8 @@ internal class BrowserS52Bridge(
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
         val result = session.portray(S52PortrayalRequest(encFeatures, settings, context))
-        return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, diagnostics, settings)
+        val rasterCommandCount = result.commands.count { it.usesRasterPresentationAsset() }
+        return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, rasterCommandCount, diagnostics, settings)
     }
 
     private fun S57Feature.toEncFeatures(diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
@@ -57,6 +58,7 @@ internal class BrowserS52Bridge(
         val sourceGeometry = geometry
         return when {
             normalizedObject == "SOUNDG" && sourceGeometry is S57Geometry.MultiPoint -> splitSoundingEncFeatures(sourceGeometry.points, diagnostics)
+            sourceGeometry is S57Geometry.MultiPoint -> splitPointEncFeatures(sourceGeometry.points, diagnostics)
             sourceGeometry is S57Geometry.MultiPolygon -> splitMultiPolygonEncFeatures(sourceGeometry.polygons, diagnostics)
             else -> listOfNotNull(toEncFeature(id, sourceGeometry, attributes, diagnostics))
         }
@@ -83,6 +85,31 @@ internal class BrowserS52Bridge(
         )
         return polygons.mapIndexedNotNull { index, polygon ->
             toEncFeature(splitId(index), polygon, attributes, diagnostics)
+        }
+    }
+
+
+    private fun S57Feature.splitPointEncFeatures(points: List<GeoPoint>, diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
+        if (points.isEmpty()) {
+            diagnostics += s52AdapterDiagnostic(
+                featureId = id,
+                objectClass = objectClass,
+                geometryType = "MultiPoint",
+                code = "s52.empty_point_multipoint",
+                message = "feature=$id ${objectClass.uppercase()} multipoint is empty"
+            )
+            return emptyList()
+        }
+        diagnostics += s52AdapterDiagnostic(
+            severity = RenderPipelineSeverity.Info,
+            featureId = id,
+            objectClass = objectClass,
+            geometryType = "MultiPoint",
+            code = "s52.split_point_multipoint",
+            message = "feature=$id ${objectClass.uppercase()} multipoint split into ${points.size} point features"
+        )
+        return points.mapIndexedNotNull { index, point ->
+            toEncFeature(splitId(index), S57Geometry.Point(point), attributes, diagnostics)
         }
     }
 
@@ -189,12 +216,20 @@ internal class BrowserS52Bridge(
         }
         return S57Attributes.of(*pairs.toTypedArray())
     }
+
+    private fun S52DrawCommand.usesRasterPresentationAsset(): Boolean = when (this) {
+        is S52DrawCommand.PointSymbol -> session.presLib.symbols.find(symbolName)?.bitmap != null
+        is S52DrawCommand.AreaPattern -> session.presLib.patterns.find(patternName)?.bitmap != null
+        is S52DrawCommand.LineComplex -> session.presLib.lineStyles.find(lineStyleName)?.bitmap != null
+        else -> false
+    }
 }
 
 internal data class BrowserS52PortrayalResult(
     val profile: BrowserS52RuntimeProfile,
     val featureCount: Int,
     val commands: List<S52DrawCommand>,
+    val rasterCommandCount: Int,
     val diagnostics: List<RenderPipelineDiagnostic>,
     val settings: MarinerSettings
 ) {
@@ -202,6 +237,7 @@ internal data class BrowserS52PortrayalResult(
         profile = profile.name,
         encFeatureCount = featureCount,
         commandCount = commands.size,
+        rasterCommandCount = rasterCommandCount,
         drawCallCount = drawCallCount,
         areaCommandCount = commands.count { it is S52DrawCommand.AreaFill || it is S52DrawCommand.AreaPattern },
         lineCommandCount = commands.count { it is S52DrawCommand.LineSimple || it is S52DrawCommand.LineComplex },

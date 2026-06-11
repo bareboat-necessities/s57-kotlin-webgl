@@ -62,6 +62,9 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     )
     val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
     window.asDynamic().s57S52ResourceRenderReady = false
+    window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
+    window.asDynamic().s57S52InitialDrawCalls = 0
+    window.asDynamic().s57S52LastResourceDrawCalls = 0
 
     return try {
         var renderer: WebGlS52Renderer? = null
@@ -70,6 +73,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             try {
                 val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
                 window.asDynamic().s57S52ResourceRenderReady = true
+                window.asDynamic().s57S52LastResourceDrawCalls = readyStats.drawCalls
                 val previousReadyRenderCount =
                     (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
                 window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
@@ -86,10 +90,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         }
         val activeRenderer = renderer
         val stats = activeRenderer.render(portrayed.commands, portrayed.settings, viewport)
+        window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
         val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
+            " rasterCommands=" + portrayed.rasterCommandCount +
             " drawCalls=" + stats.drawCalls +
             " symbols=" + stats.symbolCount +
             " lines=" + stats.lineCount +
@@ -108,11 +114,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         } else {
             s52
         }
-        val effectiveMessage = if (missingLinearOrAreaOutput) {
-            message + "; S-52 emitted no line/area draw calls for source line/area features=" + linearOrAreaFeatureCount +
+        val waitingForRasterAssets = stats.drawCalls <= 0 && portrayed.rasterCommandCount > 0
+        val effectiveMessage = when {
+            waitingForRasterAssets -> message + "; waiting for OpenCPN raster atlas resources to load asynchronously"
+            missingLinearOrAreaOutput -> message + "; S-52 emitted no line/area draw calls for source line/area features=" + linearOrAreaFeatureCount +
                 " but decoded debug geometry fallback is suppressed"
-        } else {
-            message
+            else -> message
         }
         if (s52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount)) {
             renderS52FailureFrame(

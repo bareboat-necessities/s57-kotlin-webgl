@@ -41,7 +41,7 @@ fun Phase16Counters.lines(): List<String> = listOf(
     "indexedFeatures=" + indexedFeatures + " queriedFeatures=" + queriedFeatures + " adaptedFeatures=" + adaptedFeatures + " projectedFeatures=" + projectedFeatures,
     "visibleFeatures=" + visibleFeatures + " onscreenFeatures=" + onscreenFeatures + " offscreenFeatures=" + offscreenFeatures + " clippedFeatures=" + clippedFeatures,
     "emptyGeometry=" + emptyGeometry + " adapterDiagnostics=" + adapterDiagnostics,
-    "s52Profile=" + s52.profile + " s52EncFeatures=" + s52.encFeatureCount + " s52Commands=" + s52.commandCount + " s52DrawCalls=" + s52.drawCallCount,
+    "s52Profile=" + s52.profile + " s52EncFeatures=" + s52.encFeatureCount + " s52Commands=" + s52.commandCount + " s52RasterCommands=" + s52.rasterCommandCount + " s52DrawCalls=" + s52.drawCallCount,
     "s52Areas=" + s52.areaCommandCount + " s52Lines=" + s52.lineCommandCount + " s52Symbols=" + s52.symbolCommandCount + " s52Text=" + s52.textCommandCount + " s52Soundings=" + s52.soundingCommandCount
 )
 

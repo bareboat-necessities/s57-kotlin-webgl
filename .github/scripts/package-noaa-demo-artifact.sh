@@ -17,6 +17,7 @@ copy_s52_browser_resources() {
     candidates+=("$S52_SOURCE_DIR/s52-render-webgl/src/jsMain/resources")
     candidates+=("$S52_SOURCE_DIR/s52-render-webgl/build/processedResources/js/main")
   fi
+  candidates+=("demo/src/jsMain/s52RuntimeResources")
   candidates+=("../s52-kotlin-webgl/s52-render-webgl/src/jsMain/resources")
   candidates+=("../s52-kotlin-webgl/s52-render-webgl/build/processedResources/js/main")
   candidates+=("demo/build/processedResources/js/main")

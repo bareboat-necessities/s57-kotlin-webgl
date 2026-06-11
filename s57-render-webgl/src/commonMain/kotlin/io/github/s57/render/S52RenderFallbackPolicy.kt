@@ -23,7 +23,7 @@ fun S52RenderSummary.needsGeometryFallback(
     if (projectedSourceFeatureCount <= 0) return false
     if (failureStage != "none") return true
     if (commandCount <= 0) return true
-    if (drawCallCount <= 0) return true
+    if (drawCallCount <= 0) return rasterCommandCount <= 0
     return false
 }
 
