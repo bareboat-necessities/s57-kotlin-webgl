@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     kotlin("multiplatform")
 }
@@ -52,4 +54,11 @@ tasks.register<JavaExec>("phase21NoaaVisualSmoke") {
         }
         args(phase21NoaaEncFile.get(), phase21SnapshotSvg.get())
     }
+}
+
+val chartZipCoverageFile = providers.systemProperty("s57.chartZip")
+    .orElse(providers.gradleProperty("s57.chartZip"))
+
+tasks.withType<Test>().configureEach {
+    chartZipCoverageFile.orNull?.let { systemProperty("s57.chartZip", it) }
 }
