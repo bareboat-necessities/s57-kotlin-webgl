@@ -136,3 +136,23 @@ curl -fL https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/downl
 unzip -q /tmp/s52-kotlin-webgl-release-maven.zip -d build/s52-maven
 gradle phase11Check -Ps52.version=0.3.0 -Ps52MavenRepo="$PWD/build/s52-maven"
 ```
+
+## Chart ZIP coverage test
+
+Use the external chart ZIP coverage test when you have a `.zip` archive of S-57/ENC charts and want the JVM test suite to reject corpus gaps that would otherwise rely on fallback rendering. The ZIP can contain nested folders; every `*.000` base cell is decoded, and sibling `*.001`, `*.002`, ... updates with the same path/name stem are applied in numeric order.
+
+Run it from the repository root with:
+
+```bash
+gradle :s57-render-webgl:jvmTest --tests io.github.s57.render.ChartZipCoverageTest -Ds57.chartZip=/absolute/path/to/charts.zip
+```
+
+The test fails if any chart in the archive produces:
+
+- unknown raw records, object classes (`OBJL_###`), or attributes (`ATTL_###`);
+- contour objects such as `DEPCNT` that do not decode to line geometry;
+- area objects such as `DEPARE`, `LNDARE`, `SEAARE`, or coverage/metadata area classes that do not decode to polygon geometry;
+- geometry warnings such as primitive correction or area-ring fallback; or
+- adapter warnings that indicate unsupported objects/attributes or non-renderable geometry.
+
+If `-Ds57.chartZip=...` is omitted, `ChartZipCoverageTest` prints a skip message and exits successfully so normal JVM test runs do not require private or large chart archives.
