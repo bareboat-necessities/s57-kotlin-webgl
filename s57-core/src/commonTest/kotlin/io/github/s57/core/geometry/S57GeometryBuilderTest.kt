@@ -68,6 +68,46 @@ class S57GeometryBuilderTest {
         assertTrue(result.diagnostics.any { "Missing vector" in it.message })
     }
 
+
+    @Test
+    fun infersCatalogueAreaAndLineClassesWhenPrimitiveIsDecodedAsPoint() {
+        val raw = S57RawDataset(
+            metadata = S57DatasetMetadata(cellName = "US5TEST", coordinateMultiplier = 10_000_000),
+            vectors = listOf(
+                vector(30, listOf(rawPoint(-74.0, 40.7), rawPoint(-73.9, 40.7), rawPoint(-73.9, 40.8), rawPoint(-74.0, 40.8))),
+                vector(40, listOf(rawPoint(-74.0, 40.9), rawPoint(-73.9, 41.0)))
+            ),
+            features = listOf(
+                feature(3, "BUAARE", S57Primitive.Point, 30),
+                feature(4, "FNCLNE", S57Primitive.Point, 40)
+            ),
+            unknownRecords = emptyList()
+        )
+
+        val result = S57GeometryBuilder().build(raw)
+        assertTrue(result.features[0].geometry is S57Geometry.Polygon)
+        assertTrue(result.features[1].geometry is S57Geometry.LineString)
+        assertTrue(result.diagnostics.any { "BUAARE" in it.message && "Area" in it.message })
+        assertTrue(result.diagnostics.any { "FNCLNE" in it.message && "Line" in it.message })
+    }
+
+    @Test
+    fun preservesMultipleExteriorAreaRingsAsMultiPolygon() {
+        val raw = S57RawDataset(
+            metadata = S57DatasetMetadata(cellName = "US5TEST", coordinateMultiplier = 10_000_000),
+            vectors = listOf(
+                vector(31, listOf(rawPoint(-74.0, 40.0), rawPoint(-73.9, 40.0), rawPoint(-73.9, 40.1), rawPoint(-74.0, 40.0))),
+                vector(32, listOf(rawPoint(-73.8, 40.2), rawPoint(-73.7, 40.2), rawPoint(-73.7, 40.3), rawPoint(-73.8, 40.2)))
+            ),
+            features = listOf(feature(5, "DEPARE", S57Primitive.Area, 31, 32)),
+            unknownRecords = emptyList()
+        )
+
+        val geometry = S57GeometryBuilder().build(raw).features.single().geometry
+        val multi = geometry as S57Geometry.MultiPolygon
+        assertEquals(2, multi.polygons.size)
+    }
+
     private fun rawPoint(lon: Double, lat: Double): S57RawCoordinate = S57RawCoordinate(
         yRaw = (lat * 10_000_000).toLong(),
         xRaw = (lon * 10_000_000).toLong()
@@ -81,7 +121,7 @@ class S57GeometryBuilderTest {
         twoDimensionalCoordinates = coords
     )
 
-    private fun feature(id: Long, acronym: String, primitive: S57Primitive, vectorId: Long, orientation: Int = 1) = S57RawFeatureRecord(
+    private fun feature(id: Long, acronym: String, primitive: S57Primitive, vararg vectorIds: Long, orientation: Int = 1) = S57RawFeatureRecord(
         id = id,
         recordName = S57RecordName(100, id),
         primitive = primitive,
@@ -90,6 +130,6 @@ class S57GeometryBuilderTest {
         objectClassAcronym = acronym,
         version = 1,
         updateInstruction = S57UpdateInstruction.Insert,
-        spatialReferences = listOf(S57SpatialReference(S57RecordName(130, vectorId), orientation, usage = 1, mask = 255))
+        spatialReferences = vectorIds.map { vectorId -> S57SpatialReference(S57RecordName(130, vectorId), orientation, usage = 1, mask = 255) }
     )
 }

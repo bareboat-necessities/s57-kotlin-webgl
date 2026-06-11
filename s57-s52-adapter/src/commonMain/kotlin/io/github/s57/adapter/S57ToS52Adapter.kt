@@ -44,8 +44,7 @@ class S57ToS52Adapter {
     private fun S57Feature.toPortrayalFeatures(diagnostics: MutableList<S57ToS52Diagnostic>): List<S57PortrayalFeature> {
         val normalizedClass = objectClass.uppercase()
         if (normalizedClass.startsWith("OBJL_")) {
-            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.UnsupportedObjectClass, S57ToS52DiagnosticSeverity.Warning, "Unsupported object class $normalizedClass")
-            return emptyList()
+            diagnostics += S57ToS52Diagnostic(id, S57ToS52DiagnosticKind.UnsupportedObjectClass, S57ToS52DiagnosticSeverity.Warning, "Unknown object class $normalizedClass preserved for fallback portrayal")
         }
         val sourceGeometry = geometry
         return when {
