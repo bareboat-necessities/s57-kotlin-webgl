@@ -15,16 +15,6 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
         ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
 
-    if (canvas.getContext("webgl2") == null) {
-        val s52 = S52RenderSummary(failureStage = "webgl2")
-        return renderS52FailureFrame(
-            canvasId = canvasId,
-            frame = frame,
-            reason = "S-52 WebGL render failed: WebGL2 is not available",
-            s52 = s52
-        )
-    }
-
     val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
     if (sourceFeatures.isEmpty()) {
         val s52 = S52RenderSummary(failureStage = "projection")
