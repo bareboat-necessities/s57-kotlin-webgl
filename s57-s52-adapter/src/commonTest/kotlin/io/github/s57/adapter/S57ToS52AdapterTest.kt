@@ -72,6 +72,29 @@ class S57ToS52AdapterTest {
     }
 
     @Test
+    fun parsesS57EnumerationsAndEnumerationListsForOpenCpnPortrayal() {
+        val feature = S57Feature(
+            id = 17,
+            objectClass = "BOYLAT",
+            attributes = mapOf(
+                "BOYSHP" to S57Value.Text("2"),
+                "COLOUR" to S57Value.Text("3,4"),
+                "TOPSHP" to S57Value.Text("11")
+            ),
+            geometry = S57Geometry.Point(GeoPoint(-74.0, 40.0))
+        )
+
+        val result = S57ToS52Adapter().adaptFeature(feature)
+        val enc = result.features.single()
+        assertEquals(S57PortrayalValue.Integer(2), enc.attributes["BOYSHP"])
+        assertEquals(
+            S57PortrayalValue.ListValue(listOf(S57PortrayalValue.Integer(3), S57PortrayalValue.Integer(4))),
+            enc.attributes["COLOUR"]
+        )
+        assertEquals(S57PortrayalValue.Integer(11), enc.attributes["TOPSHP"])
+    }
+
+    @Test
     fun reportsEmptyGeometryInsteadOfPretendingItCanBePortrayed() {
         val feature = S57Feature(
             id = 999,
