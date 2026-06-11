@@ -173,7 +173,7 @@ internal class BrowserS52Bridge(
                 geometryType = sourceGeometry.diagnosticGeometryType(),
                 code = if (quietlyUnmodeled) "s52.unmodeled_object_class" else "s52.unsupported_object_class",
                 message = if (quietlyUnmodeled) {
-                    "feature=$id objectClass=${this.objectClass} is valid S-57 but not modeled by the bundled S-52 0.5 catalogue; skipped without debug fallback"
+                    "feature=$id objectClass=${this.objectClass} is valid S-57 but not modeled by the bundled S-52 catalogue; skipped without debug fallback"
                 } else {
                     "feature=$id unsupported objectClass=${this.objectClass}"
                 }
@@ -201,7 +201,7 @@ internal class BrowserS52Bridge(
                 geometryType = sourceGeometry.diagnosticGeometryType(),
                 code = if (quietlyUnmodeled) "s52.unmodeled_primitive" else "s52.unsupported_primitive",
                 message = if (quietlyUnmodeled) {
-                    "feature=$id objectClass=${objectClass.acronym} primitive=$primitive is valid ENC metadata but not rendered by the bundled S-52 0.5 catalogue"
+                    "feature=$id objectClass=${objectClass.acronym} primitive=$primitive is valid ENC metadata but not rendered by the bundled S-52 catalogue"
                 } else {
                     "feature=$id objectClass=${objectClass.acronym} unsupported primitive=$primitive"
                 }
@@ -236,7 +236,7 @@ internal class BrowserS52Bridge(
                     attributes = listOf(name),
                     code = if (knownButUnmodeled) "s52.unmodeled_attribute" else "s52.unsupported_attribute",
                     message = if (knownButUnmodeled) {
-                        "feature=$featureId ignored S-57 attribute=$name because the bundled S-52 0.5 catalogue has no typed entry for it"
+                        "feature=$featureId ignored S-57 attribute=$name because the bundled S-52 catalogue has no typed entry for it"
                     } else {
                         "feature=$featureId ignored unsupported attribute=$name"
                     }
@@ -531,7 +531,10 @@ private fun String.isKnownUnmodeledObjectClass(): Boolean {
 }
 
 private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean = when (uppercase() to primitive) {
+    "ACHBRT" to PrimitiveType.Line,
+    "ACHARE" to PrimitiveType.Line,
     "LNDARE" to PrimitiveType.Point,
+    "LNDRGN" to PrimitiveType.Point,
     "MAGVAR" to PrimitiveType.Point,
     "SBDARE" to PrimitiveType.Point,
     "SLCONS" to PrimitiveType.Point -> true
@@ -540,13 +543,15 @@ private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean 
 
 private fun String.isKnownS57AttributeMissingFromBundledS52Catalog(): Boolean = uppercase() in setOf(
     // These are valid S-57 attributes observed in NOAA cells but missing from
-    // the S-52 0.5 typed catalogue.  They should not drown CI/browser logs as
+    // the S-52 0.5.2 typed catalogue.  They should not drown CI/browser logs as
     // "unsupported" warnings.  When the upstream catalogue adds them this
     // list can be removed and values will automatically flow to S-52 CSPs.
     "CATAIR",
+    "CATLND",
     "CATSEA",
     "CATSIL",
     "CATSLC",
+    "CATSLO",
     "CATSPM",
     "NATSUR",
     "TRAFIC"

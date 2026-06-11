@@ -143,11 +143,19 @@ fun main() {
         latestPipelineReport = report
         val dynamicWindow = window.asDynamic()
         dynamicWindow.s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
-        dynamicWindow.s57Phase26ReportJson = { latestPipelineReport.toJson() }
-        // Keep the legacy browser helper, but implement it as plain JavaScript.
-        // JSON.parse<dynamic>(...) can compile to a Kotlin dynamic bridge that
-        // throws "P.asDynamic is not a function" in CI/Chrome.
-        dynamicWindow.s57Phase26Report = js("function() { return JSON.parse(window.s57Phase26ReportJson()); }")
+        dynamicWindow.s57Phase26LatestReportJson = latestPipelineReport.toJson()
+        // Export Phase 26 diagnostics through plain JavaScript wrappers.  Do not
+        // expose Kotlin lambdas here: calling Kotlin function objects from
+        // Playwright/Chrome can trip Kotlin/JS dynamic bridge code and report
+        // "P.asDynamic is not a function".
+        js("""
+            window.s57Phase26ReportJson = function() {
+                return window.s57Phase26LatestReportJson || '{}';
+            };
+            window.s57Phase26Report = function() {
+                return JSON.parse(window.s57Phase26LatestReportJson || '{}');
+            };
+        """)
     }
 
     fun downloadUrl(fileName: String, url: String) {
@@ -361,7 +369,7 @@ fun main() {
                 appendLine("Render pipeline diagnostics:")
                 appendLine(renderReport.toPlainText())
             }
-            appendLine("Diagnostics JSON is available through the download button and window.s57Phase26Report().")
+            appendLine("Diagnostics JSON is available through the download button and window.s57Phase26ReportJson().")
             if (matchingImport != null) appendLine("index: " + matchingImport.indexReport.toPlainText())
             if (result.frame.adapterDiagnostics.isNotEmpty()) {
                 appendLine("adapterDiagnostics:")

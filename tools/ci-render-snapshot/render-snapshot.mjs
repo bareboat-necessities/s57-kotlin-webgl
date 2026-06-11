@@ -127,6 +127,7 @@ async function readPhase26Report(page) {
     // Prefer the JSON export.  It is stable across Kotlin/JS dynamic interop
     // changes, while the object-returning helper is only a convenience for
     // manual browser debugging.
+    if (typeof window.s57Phase26LatestReportJson === 'string') return JSON.parse(window.s57Phase26LatestReportJson || '{}');
     if (typeof window.s57Phase26ReportJson === 'function') return JSON.parse(window.s57Phase26ReportJson());
     if (typeof window.s57Phase26ReportJson === 'string') return JSON.parse(window.s57Phase26ReportJson);
     if (typeof window.s57Phase26Report === 'function') return window.s57Phase26Report();
@@ -196,7 +197,12 @@ try {
   const rasterCommandsFromReport = Number(report?.counters?.s52RasterCommands ?? 0) || 0;
   const rasterCommandsFromWindow = await page.evaluate(() => Number(window.s57S52RasterCommandCount || 0) || 0);
   const rasterCommands = Math.max(rasterCommandsFromReport, rasterCommandsFromWindow);
-  if (rasterCommands > 0) {
+  const hasInitialS52Commands = reportCounter(report, 's52Commands') > 0;
+  const webGl2AvailableBeforeResourceWait = await chartCanvasWebGl2Available(page);
+  const webGl2EnvironmentOnlyInitialFailure = hasInitialS52Commands &&
+    (!webGl2AvailableBeforeResourceWait || hasWebGl2EnvironmentDiagnostic(report));
+
+  if (rasterCommands > 0 && !webGl2EnvironmentOnlyInitialFailure) {
     await assertS52OpenCpnAtlasPresent(page);
     await page.waitForFunction(
       () => Boolean(window.s57S52ResourceRenderReady) || Number(window.s57S52ResourceRenderCount || 0) > 0,
@@ -209,11 +215,14 @@ try {
       { timeout: 30000 }
     ).catch(() => undefined);
     await page.waitForTimeout(250);
+  } else if (rasterCommands > 0 && webGl2EnvironmentOnlyInitialFailure) {
+    await assertS52OpenCpnAtlasPresent(page);
+    console.warn('Phase 26 snapshot: S-52 produced raster commands, but CI/headless Chromium has no usable WebGL2; skipping async raster redraw wait.');
   } else if (initialS52DrawCalls > 0) {
     await page.waitForTimeout(250);
   }
   report = await readPhase26Report(page);
-  const webGl2Available = await chartCanvasWebGl2Available(page);
+  const webGl2Available = webGl2AvailableBeforeResourceWait || await chartCanvasWebGl2Available(page);
   const hasS52Commands = reportCounter(report, 's52Commands') > 0;
   const webGl2EnvironmentOnlyFailure = hasS52Commands &&
     (!webGl2Available || hasWebGl2EnvironmentDiagnostic(report));

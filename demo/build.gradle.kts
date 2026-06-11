@@ -19,7 +19,7 @@ val s52AtlasFiles = listOf(
 )
 val generatedS52RuntimeResources = layout.buildDirectory.dir("generated/s52-runtime-resources")
 val generatedS52AtlasDir = generatedS52RuntimeResources.map { it.dir("s52/opencpn") }
-val s52VersionForAssets = providers.gradleProperty("s52.version").orElse("0.5.0")
+val s52VersionForAssets = providers.gradleProperty("s52.version").orElse("0.5.2")
 val allowS52RuntimeResourceDownload = providers.gradleProperty("s52.downloadRuntimeResources")
     .map { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
     .orElse(true)
@@ -52,7 +52,8 @@ val prepareS52OpenCpnRuntimeResources by tasks.registering {
             bundledS52AtlasDir,
             s52AtlasDir,
             findAtlasDirUnder(rootProject.layout.buildDirectory.dir("s52-source-unpacked").get().asFile),
-            findAtlasDirUnder(rootProject.layout.buildDirectory.dir("s52-maven").get().asFile)
+            findAtlasDirUnder(rootProject.layout.buildDirectory.dir("s52-maven").get().asFile),
+            findAtlasDirUnder(rootProject.layout.buildDirectory.dir("s52-images").get().asFile)
         ).distinctBy { it.absoluteFile.normalize().path }
 
         val copiedFrom = candidateAtlasDirs.firstOrNull { copyAtlasFiles(it, target) }
