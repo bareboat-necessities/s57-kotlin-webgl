@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 class S52RenderFallbackPolicyTest {
     @Test
-    fun usesFallbackWhenS52ClearsCanvasButDrawsNothing() {
+    fun reportsFailureWhenS52ClearsCanvasButDrawsNothing() {
         val s52 = S52RenderSummary(
             profile = "OpenCpn",
             encFeatureCount = 4,
@@ -52,7 +52,7 @@ class S52RenderFallbackPolicyTest {
     }
 
     @Test
-    fun keepsSuccessfulS52FrameEvenWhenOutputIsPointOnlyAndSourceHasLineOrAreaGeometry() {
+    fun keepsS52WhenPointOnlyOutputHasAlreadyProducedGpuDrawCalls() {
         val s52 = S52RenderSummary(
             profile = "OpenCpn",
             encFeatureCount = 12,
@@ -96,7 +96,7 @@ class S52RenderFallbackPolicyTest {
     }
 
     @Test
-    fun doesNotOverlayDecodedGeometryAfterFailedS52BecauseFallbackOwnsTheCanvas() {
+    fun doesNotOverlayDecodedGeometryAfterFailedS52() {
         val s52 = S52RenderSummary(commandCount = 0, drawCallCount = 0, failureStage = "portrayal")
 
         assertFalse(s52.shouldOverlayDecodedGeometry(projectedSourceFeatureCount = 10, projectedLinearOrAreaFeatureCount = 2))

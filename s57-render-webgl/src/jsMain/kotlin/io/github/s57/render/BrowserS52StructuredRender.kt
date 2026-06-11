@@ -5,6 +5,7 @@ import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlin.js.console
+import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
 
 fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
@@ -16,7 +17,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     if (canvas.getContext("webgl2") == null) {
         val s52 = S52RenderSummary(failureStage = "webgl2")
-        return geometryFallbackRender(
+        return renderS52FailureFrame(
             canvasId = canvasId,
             frame = frame,
             reason = "S-52 WebGL render failed: WebGL2 is not available",
@@ -27,7 +28,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
     if (sourceFeatures.isEmpty()) {
         val s52 = S52RenderSummary(failureStage = "projection")
-        return geometryFallbackRender(
+        return renderS52FailureFrame(
             canvasId = canvasId,
             frame = frame,
             reason = "S-52 render skipped: projectedSourceFeatures=0 queried=" + frame.queriedFeatureCount + " adapted=" + frame.adaptedFeatureCount,
@@ -45,7 +46,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     if (portrayed.commands.isEmpty()) {
         val s52 = portrayed.toSummary(failureStage = "portrayal")
-        return geometryFallbackRender(
+        return renderS52FailureFrame(
             canvasId = canvasId,
             frame = frame,
             reason = "S-52 portrayal produced zero commands: profile=" + portrayed.profile + " encFeatures=" + portrayed.featureCount + " diagnostics=" + portrayed.diagnostics.size,
@@ -74,7 +75,9 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
                 val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
                 if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
-                    renderGeometryOverlay(canvasId, frame, includePointGlyphs = true, includeSoundingPointGlyphs = true)
+                    // Intentionally disabled by policy.  The decoded renderer is a
+                    // parser/debug view, not an OpenCPN presentation fallback.
+                    console.warn("S-52 decoded-geometry overlay was requested but suppressed")
                 }
             } catch (_: Throwable) {
                 // The initial render path already reports errors. Resource-ready
@@ -94,34 +97,40 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " text=" + (stats.textCount + stats.soundingCount) +
             " diagnostics=" + portrayed.diagnostics.size
         val renderedLinearOrAreaDrawCount = stats.lineCount + stats.areaFillCount + stats.areaPatternCount
-        val partialOutputDiagnostic = s52PartialLineAreaDiagnostic(
-            frame = frame,
-            linearOrAreaFeatureCount = linearOrAreaFeatureCount,
-            renderedLinearOrAreaDrawCount = renderedLinearOrAreaDrawCount
-        )
-        val effectiveS52 = if (partialOutputDiagnostic == null) {
-            s52
+        val missingLinearOrAreaOutput = linearOrAreaFeatureCount > 0 && renderedLinearOrAreaDrawCount <= 0
+        val effectiveS52 = if (missingLinearOrAreaOutput) {
+            s52.withPartialLineAreaDiagnostic(
+                frame = frame,
+                sourceFeatureCount = sourceFeatures.size,
+                linearOrAreaFeatureCount = linearOrAreaFeatureCount,
+                renderedLinearOrAreaDrawCount = renderedLinearOrAreaDrawCount
+            )
         } else {
-            val diagnostics = s52.diagnostics + partialOutputDiagnostic
-            s52.copy(diagnostics = diagnostics, diagnosticCount = diagnostics.size)
+            s52
         }
-        if (effectiveS52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount)) {
-            geometryFallbackRender(
+        val effectiveMessage = if (missingLinearOrAreaOutput) {
+            message + "; S-52 emitted no line/area draw calls for source line/area features=" + linearOrAreaFeatureCount +
+                " but decoded debug geometry fallback is suppressed"
+        } else {
+            message
+        }
+        if (s52.needsGeometryFallback(sourceFeatures.size, linearOrAreaFeatureCount)) {
+            renderS52FailureFrame(
                 canvasId = canvasId,
                 frame = frame,
-                reason = message + " but S-52 did not produce usable GPU output",
+                reason = effectiveMessage + "; S-52 produced no usable draw calls",
                 s52 = effectiveS52.copy(failureStage = "zero-drawcalls")
             )
         } else {
-            // Do not repaint a successful OpenCPN/S-52 frame with decoded debug
-            // geometry.  That fallback renderer intentionally uses simple local
-            // shapes and colors; drawing it over S-52 output hides real buoy and
-            // beacon symbols and makes PNG snapshots look like diagnostics.
-            frame.summary().copy(message = message, s52 = effectiveS52, pipelineDiagnostics = effectiveS52.diagnostics)
+            frame.summary().copy(
+                message = effectiveMessage,
+                s52 = effectiveS52,
+                pipelineDiagnostics = effectiveS52.diagnostics
+            )
         }
     } catch (t: Throwable) {
         val s52 = portrayed.toSummary(failureStage = "webgl-render")
-        geometryFallbackRender(
+        renderS52FailureFrame(
             canvasId = canvasId,
             frame = frame,
             reason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
@@ -132,48 +141,82 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     }
 }
 
-
-private fun s52PartialLineAreaDiagnostic(
-    frame: StaticChartFrame,
-    linearOrAreaFeatureCount: Int,
-    renderedLinearOrAreaDrawCount: Int
-): RenderPipelineDiagnostic? {
-    if (linearOrAreaFeatureCount <= 0 || renderedLinearOrAreaDrawCount > 0) return null
-    return RenderPipelineDiagnostic(
-        stage = RenderPipelineStage.WebGl,
-        severity = RenderPipelineSeverity.Warning,
-        code = "s52.partial-line-area-output",
-        message = "S-52 produced GPU output but no line/area draw counts for projected line/area source features; preserving the OpenCPN/S-52 canvas instead of replacing symbols with decoded debug fallback geometry",
-        source = RenderPipelineSource(cellId = frame.request.cellId),
-        metadata = mapOf(
-            "projectedLinearOrAreaFeatureCount" to linearOrAreaFeatureCount.toString(),
-            "s52RenderedLinearOrAreaDrawCount" to renderedLinearOrAreaDrawCount.toString()
-        )
-    )
-}
-
-private fun BrowserS57WebGlRenderer.geometryFallbackRender(
+/**
+ * Clear the canvas and report the S-52 failure without invoking renderFrame().
+ *
+ * renderFrame() is the decoded-geometry debug renderer.  Calling it from the
+ * S-52 path is what makes Chrome/PNG snapshots show red diamonds, plus signs,
+ * and repository fallback colors instead of OpenCPN symbols.  A failed S-52
+ * frame should be visibly empty and diagnostic-rich rather than silently
+ * replacing the presentation library with debug glyphs.
+ */
+fun BrowserS57WebGlRenderer.renderS52FailureFrame(
     canvasId: String,
     frame: StaticChartFrame,
     reason: String,
     s52: S52RenderSummary
 ): RenderedFrameSummary {
-    val fallback = renderFrame(canvasId, frame)
-    val fallbackDiagnostic = RenderPipelineDiagnostic(
+    val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
+    if (canvas != null) clearCanvasForSuppressedS52Fallback(canvas)
+    val diagnostic = RenderPipelineDiagnostic(
         stage = if (s52.failureStage == "portrayal") RenderPipelineStage.S52Portrayal else RenderPipelineStage.WebGl,
-        severity = RenderPipelineSeverity.Warning,
-        code = "s52.geometry_fallback",
-        message = reason,
+        severity = RenderPipelineSeverity.Error,
+        code = "s52.debug_geometry_fallback_suppressed",
+        message = reason + "; decoded debug geometry fallback was suppressed",
         source = RenderPipelineSource(cellId = frame.request.cellId),
         metadata = mapOf("failureStage" to s52.failureStage)
     )
-    fallbackDiagnostic.logRenderDiagnosticToConsole()
-    val diagnostics = s52.diagnostics + fallbackDiagnostic
-    return fallback.copy(
-        message = s52FallbackMessage(reason, fallback.message),
+    diagnostic.logRenderDiagnosticToConsole()
+    val diagnostics = s52.diagnostics + diagnostic
+    return RenderedFrameSummary(
+        widthPx = canvas?.width ?: frame.request.widthPx,
+        heightPx = canvas?.height ?: frame.request.heightPx,
+        message = reason + "; decoded debug geometry fallback suppressed",
+        camera = frame.request.camera,
+        centerCrosshairHits = frame.summary().centerCrosshairHits,
+        depthMeshEnabled = frame.summary().depthMeshEnabled,
         s52 = s52.copy(diagnostics = diagnostics, diagnosticCount = diagnostics.size),
-        pipelineDiagnostics = fallback.pipelineDiagnostics + diagnostics
+        pipelineDiagnostics = diagnostics
     )
+}
+
+private fun clearCanvasForSuppressedS52Fallback(canvas: HTMLCanvasElement) {
+    val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
+    if (rawGl != null) {
+        val gl = rawGl.asDynamic()
+        gl.viewport(0, 0, canvas.width, canvas.height)
+        gl.clearColor(0.92, 0.96, 0.99, 1.0)
+        gl.clear(0x4000)
+        return
+    }
+    val ctx = canvas.getContext("2d") as? CanvasRenderingContext2D
+    if (ctx != null) {
+        ctx.fillStyle = "rgba(235, 245, 252, 1.0)"
+        ctx.fillRect(0.0, 0.0, canvas.width.toDouble(), canvas.height.toDouble())
+    }
+}
+
+private fun S52RenderSummary.withPartialLineAreaDiagnostic(
+    frame: StaticChartFrame,
+    sourceFeatureCount: Int,
+    linearOrAreaFeatureCount: Int,
+    renderedLinearOrAreaDrawCount: Int
+): S52RenderSummary {
+    val diagnostic = RenderPipelineDiagnostic(
+        stage = RenderPipelineStage.S52Portrayal,
+        severity = RenderPipelineSeverity.Warning,
+        code = "s52.partial_line_area_output",
+        message = "S-52 emitted draw calls, but line/area output is absent; keeping OpenCPN/S-52 output and suppressing decoded debug geometry fallback",
+        source = RenderPipelineSource(cellId = frame.request.cellId),
+        metadata = mapOf(
+            "sourceFeatures" to sourceFeatureCount.toString(),
+            "linearOrAreaFeatures" to linearOrAreaFeatureCount.toString(),
+            "linearOrAreaDrawCalls" to renderedLinearOrAreaDrawCount.toString()
+        )
+    )
+    diagnostic.logRenderDiagnosticToConsole()
+    val nextDiagnostics = diagnostics + diagnostic
+    return copy(diagnostics = nextDiagnostics, diagnosticCount = nextDiagnostics.size)
 }
 
 private fun List<RenderPipelineDiagnostic>.logRenderDiagnosticsToConsole() {

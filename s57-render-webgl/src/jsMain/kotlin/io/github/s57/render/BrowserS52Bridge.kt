@@ -366,8 +366,8 @@ private fun browserS52Settings(
     displayCategory = DisplayCategory.Other,
     palette = paletteName.toBrowserS52Palette(),
     scale = scaleDenominator,
-    symbolStyle = SymbolStyle.Simplified,
-    boundaryStyle = BoundaryStyle.Plain,
+    symbolStyle = SymbolStyle.PaperChart,
+    boundaryStyle = BoundaryStyle.Symbolized,
     showText = true,
     showSoundings = true,
     showLightDescriptions = true

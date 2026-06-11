@@ -29,6 +29,8 @@ import io.github.s57.render.chooseInitialActiveCell
 import io.github.s57.render.normalizePaletteName
 import io.github.s57.render.pipelineDiagnosticReport
 import io.github.s57.render.renderS52FrameWithSummary
+import io.github.s57.render.renderS52FailureFrame
+import io.github.s57.render.S52RenderSummary
 import io.github.s57.render.toPlainText
 import io.github.s57.render.toRenderPipelineDiagnostics
 import io.github.s57.render.toS57ByteArray
@@ -92,8 +94,12 @@ fun main() {
             try {
                 renderer.renderS52FrameWithSummary("chartCanvas", frame)
             } catch (t: Throwable) {
-                val fallback = renderer.renderFrame("chartCanvas", frame)
-                fallback.copy(message = "S-52 structured render threw: " + (t.message ?: t.toString()) + "; " + fallback.message)
+                renderer.renderS52FailureFrame(
+                    canvasId = "chartCanvas",
+                    frame = frame,
+                    reason = "S-52 structured render threw: " + (t.message ?: t.toString()),
+                    s52 = S52RenderSummary(failureStage = "webgl-render")
+                )
             }
         },
         initialSize = ScreenSize(canvas.width, canvas.height),

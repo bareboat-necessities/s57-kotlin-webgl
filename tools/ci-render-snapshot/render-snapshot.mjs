@@ -64,6 +64,31 @@ function reportCounter(report, name) {
   return Number(report?.counters?.[name] ?? report?.countsByCode?.[name] ?? 0) || 0;
 }
 
+
+async function assertS52OpenCpnAtlasPresent(page) {
+  const result = await page.evaluate(async () => {
+    const names = [
+      's52/opencpn/rastersymbols-day.png',
+      's52/opencpn/rastersymbols-dusk.png',
+      's52/opencpn/rastersymbols-dark.png'
+    ];
+    const checks = [];
+    for (const name of names) {
+      try {
+        const response = await fetch(name, { cache: 'no-store' });
+        checks.push({ name, ok: response.ok, status: response.status });
+      } catch (error) {
+        checks.push({ name, ok: false, status: 0, message: String(error) });
+      }
+    }
+    return checks;
+  });
+  const missing = result.filter((item) => !item.ok);
+  if (missing.length > 0) {
+    throw new Error(`S-52/OpenCPN raster atlas was not served by the browser app: ${missing.map((item) => `${item.name}=HTTP ${item.status}${item.message ? ` ${item.message}` : ''}`).join(', ')}`);
+  }
+}
+
 function thresholdWarnings(report) {
   if (!existsSync(thresholdsFile)) return [];
   const thresholds = JSON.parse(readFileSync(thresholdsFile, 'utf8'));
@@ -114,6 +139,7 @@ try {
     throw new Error('Malformed Phase 26 diagnostics JSON');
   }
   if (Number(report?.counters?.s52DrawCalls ?? 0) > 0) {
+    await assertS52OpenCpnAtlasPresent(page);
     await page.waitForFunction(
       () => Boolean(window.s57S52ResourceRenderReady) || Number(window.s57S52ResourceRenderCount || 0) > 0,
       null,
