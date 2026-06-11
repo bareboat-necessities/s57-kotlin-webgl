@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
-  "mode": "warning-only",
+  "mode": "open-cpn-s52-required",
+  "minimumCounters": {
+    "s52Commands": 1
+  },
+  "forbiddenCodes": [
+    "pipeline-blocked",
+    "s52.debug_geometry_fallback_suppressed"
+  ],
   "warningOnlyLimits": {
     "missingSymbols": 0,
     "missingColorTokens": 0,

@@ -48,9 +48,9 @@ internal class BrowserS52Bridge(
         val encFeatures = features.flatMap { it.toEncFeatures(diagnostics) }
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
-        val result = session.portray(S52PortrayalRequest(encFeatures, settings, context))
-        val rasterCommandCount = result.commands.count { it.usesRasterPresentationAsset() }
-        return BrowserS52PortrayalResult(profile, encFeatures.size, result.commands, rasterCommandCount, diagnostics, settings)
+        val commands = portrayResiliently(encFeatures, settings, context, diagnostics)
+        val rasterCommandCount = commands.count { it.usesRasterPresentationAsset() }
+        return BrowserS52PortrayalResult(profile, encFeatures.size, commands, rasterCommandCount, diagnostics, settings)
     }
 
     private fun S57Feature.toEncFeatures(diagnostics: MutableList<RenderPipelineDiagnostic>): List<EncFeature> {
@@ -160,7 +160,9 @@ internal class BrowserS52Bridge(
             )
             return null
         }
-        val objectClass = s52ObjectClass(objectClass)
+        val sourceObjectClassAcronym = objectClass.uppercase()
+        val portrayalObjectClassAcronym = sourceObjectClassAcronym.s52CspCompatibleObjectClassAcronym()
+        val objectClass = s52ObjectClass(portrayalObjectClassAcronym)
         if (objectClass == null) {
             diagnostics += s52AdapterDiagnostic(
                 featureId = id,
@@ -171,6 +173,17 @@ internal class BrowserS52Bridge(
                 message = "feature=$id unsupported objectClass=${this.objectClass}"
             )
             return null
+        }
+        if (portrayalObjectClassAcronym != sourceObjectClassAcronym) {
+            diagnostics += s52AdapterDiagnostic(
+                severity = RenderPipelineSeverity.Info,
+                featureId = id,
+                objectClass = this.objectClass,
+                primitive = primitive.name,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.csp_object_class_alias",
+                message = "feature=$id ${this.objectClass} portrayed through $portrayalObjectClassAcronym to match the OpenCPN CSP binding"
+            )
         }
         if (!objectClass.supports(primitive)) {
             diagnostics += s52AdapterDiagnostic(
@@ -216,6 +229,67 @@ internal class BrowserS52Bridge(
         }
         return S57Attributes.of(*pairs.toTypedArray())
     }
+
+    /**
+     * Renderable ENC cells may contain object classes/attribute combinations that
+     * trigger an OpenCPN conditional-symbology procedure exception in the current
+     * S-52 library, for example:
+     *
+     *   DEPARE CSP received DRGARE
+     *   OBSTRN CSP received UWTROC
+     *
+     * Treating one CSP exception as a whole-frame failure leaves the browser with
+     * the blank blue canvas seen in Chrome and in CI snapshots.  The real chart is
+     * still usable for portrayal once the single bad feature is isolated.  This
+     * bisecting path keeps the normal all-at-once path for healthy cells, then
+     * recursively splits only failed chunks and skips individual offending
+     * features with diagnostics.
+     */
+    private fun portrayResiliently(
+        encFeatures: List<EncFeature>,
+        settings: MarinerSettings,
+        context: PortrayalContext,
+        diagnostics: MutableList<RenderPipelineDiagnostic>
+    ): List<S52DrawCommand> = portrayChunk(encFeatures, settings, context, diagnostics)
+
+    private fun portrayChunk(
+        encFeatures: List<EncFeature>,
+        settings: MarinerSettings,
+        context: PortrayalContext,
+        diagnostics: MutableList<RenderPipelineDiagnostic>
+    ): List<S52DrawCommand> {
+        if (encFeatures.isEmpty()) return emptyList()
+        return try {
+            profile.createSession().portray(S52PortrayalRequest(encFeatures, settings, context)).commands
+        } catch (t: Throwable) {
+            if (encFeatures.size == 1) {
+                val failed = encFeatures.first()
+                diagnostics += failed.toS52CspSkipDiagnostic(t)
+                emptyList()
+            } else {
+                val midpoint = encFeatures.size / 2
+                portrayChunk(encFeatures.take(midpoint), settings, context, diagnostics) +
+                    portrayChunk(encFeatures.drop(midpoint), settings, context, diagnostics)
+            }
+        }
+    }
+
+    private fun EncFeature.toS52CspSkipDiagnostic(t: Throwable): RenderPipelineDiagnostic = RenderPipelineDiagnostic(
+        stage = RenderPipelineStage.S52Portrayal,
+        severity = RenderPipelineSeverity.Warning,
+        code = "s52.csp_feature_skipped",
+        message = "Skipped one ENC feature after S-52 conditional symbology failed: " + t.cleanS52ErrorMessage(),
+        source = RenderPipelineSource(
+            featureId = id,
+            objectClass = objectClass.acronym,
+            primitive = primitive.name,
+            geometryType = geometry.diagnosticGeometryType()
+        ),
+        metadata = mapOf(
+            "profile" to profile.name,
+            "exception" to t.cleanS52ErrorMessage()
+        )
+    )
 
     private fun S52DrawCommand.usesRasterPresentationAsset(): Boolean = when (this) {
         is S52DrawCommand.PointSymbol -> session.presLib.symbols.find(symbolName)?.bitmap != null
@@ -323,6 +397,16 @@ private fun S57Geometry.diagnosticGeometryType(): String = when (this) {
     is S57Geometry.MultiPolygon -> "MultiPolygon"
 }
 
+private fun EncGeometry.diagnosticGeometryType(): String = when (this) {
+    is EncGeometry.Point -> "Point"
+    is EncGeometry.MultiPoint -> "MultiPoint"
+    is EncGeometry.LineString -> "LineString"
+    is EncGeometry.Polygon -> "Polygon"
+    else -> "EncGeometry"
+}
+
+private fun Throwable.cleanS52ErrorMessage(): String = message?.takeIf { it.isNotBlank() } ?: toString()
+
 private fun GeoPoint.toS52Coordinate(): Coordinate = Coordinate(lon = lon, lat = lat)
 
 private fun S57Value.rawToS52Value(attribute: S57Attribute): S52Value = when (this) {
@@ -389,6 +473,16 @@ private fun S57Value.asIntOrNull(): Int? = when (this) {
     is S57Value.Text -> value.trim().toIntOrNull()
     is S57Value.ListValue -> values.firstOrNull()?.asIntOrNull()
     S57Value.Empty -> null
+}
+
+private fun String.s52CspCompatibleObjectClassAcronym(): String = when (uppercase()) {
+    // The S-52 v0.5 OpenCPN profile binds these classes to shared CSPs whose
+    // guards currently check the shared procedure's nominal class.  Passing the
+    // alias avoids whole-frame CSP exceptions while keeping the intended shared
+    // portrayal path active.
+    "DRGARE" -> "DEPARE"
+    "UWTROC" -> "OBSTRN"
+    else -> uppercase()
 }
 
 private fun s52ObjectClass(acronym: String): S57ObjectClass? = S57ObjectClass.fromAcronym(acronym)

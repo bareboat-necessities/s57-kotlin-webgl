@@ -89,9 +89,12 @@ async function assertS52OpenCpnAtlasPresent(page) {
   }
 }
 
+function readThresholds() {
+  return existsSync(thresholdsFile) ? JSON.parse(readFileSync(thresholdsFile, 'utf8')) : {};
+}
+
 function thresholdWarnings(report) {
-  if (!existsSync(thresholdsFile)) return [];
-  const thresholds = JSON.parse(readFileSync(thresholdsFile, 'utf8'));
+  const thresholds = readThresholds();
   const limits = thresholds.warningOnlyLimits ?? {};
   const warnings = [];
   for (const [name, max] of Object.entries(limits)) {
@@ -99,6 +102,27 @@ function thresholdWarnings(report) {
     if (actual > Number(max)) warnings.push(`${name}=${actual} exceeds warning-only baseline ${max}`);
   }
   return warnings;
+}
+
+function thresholdFailures(report) {
+  const thresholds = readThresholds();
+  const minimums = thresholds.minimumCounters ?? {};
+  const forbiddenCodes = thresholds.forbiddenCodes ?? [];
+  const failures = [];
+  for (const [name, min] of Object.entries(minimums)) {
+    const actual = reportCounter(report, name);
+    if (actual < Number(min)) failures.push(`${name}=${actual} is below required minimum ${min}`);
+  }
+  for (const code of forbiddenCodes) {
+    const actual = Number(report?.countsByCode?.[code] ?? 0) || 0;
+    if (actual > 0) failures.push(`${code} occurred ${actual} time(s)`);
+  }
+  return failures;
+}
+
+async function readPhase26Report(page) {
+  let report = await readPhase26Report(page);
+  return report;
 }
 
 const { server, url } = await startServer(appDir);
@@ -128,16 +152,7 @@ try {
     const cellText = await page.locator('#cellSummary').textContent().catch(() => 'cell summary unavailable');
     throw new Error(`Timed out waiting for Phase 26 render readiness. status=${statusText} cellSummary=${cellText}`);
   }
-  const reportJson = await page.evaluate(() => {
-    if (typeof window.s57Phase26ReportJson === 'function') return window.s57Phase26ReportJson();
-    if (typeof window.s57Phase26Report === 'function') return JSON.stringify(window.s57Phase26Report());
-    return '';
-  });
-  if (!reportJson) throw new Error('Phase 26 diagnostics JSON hook returned an empty value');
-  const report = JSON.parse(reportJson);
-  if (!report || report.schemaVersion == null || !Array.isArray(report.diagnostics)) {
-    throw new Error('Malformed Phase 26 diagnostics JSON');
-  }
+  let report = await readPhase26Report(page);
   const initialS52DrawCalls = Number(report?.counters?.s52DrawCalls ?? 0) || 0;
   const rasterCommandsFromReport = Number(report?.counters?.s52RasterCommands ?? 0) || 0;
   const rasterCommandsFromWindow = await page.evaluate(() => Number(window.s57S52RasterCommandCount || 0) || 0);
@@ -157,6 +172,11 @@ try {
     await page.waitForTimeout(250);
   } else if (initialS52DrawCalls > 0) {
     await page.waitForTimeout(250);
+  }
+  report = await readPhase26Report(page);
+  const failures = thresholdFailures(report);
+  if (failures.length > 0) {
+    throw new Error(`Phase 26 hard render thresholds failed: ${failures.join('; ')}`);
   }
   const canvas = page.locator('#chartCanvas');
   await canvas.screenshot({ path: path.join(outDir, 'render.png') });
