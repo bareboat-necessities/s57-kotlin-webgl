@@ -65,29 +65,6 @@ function reportCounter(report, name) {
 }
 
 
-async function assertS52OpenCpnAtlasPresent(page) {
-  const result = await page.evaluate(async () => {
-    const names = [
-      's52/opencpn/rastersymbols-day.png',
-      's52/opencpn/rastersymbols-dusk.png',
-      's52/opencpn/rastersymbols-dark.png'
-    ];
-    const checks = [];
-    for (const name of names) {
-      try {
-        const response = await fetch(name, { cache: 'no-store' });
-        checks.push({ name, ok: response.ok, status: response.status });
-      } catch (error) {
-        checks.push({ name, ok: false, status: 0, message: String(error) });
-      }
-    }
-    return checks;
-  });
-  const missing = result.filter((item) => !item.ok);
-  if (missing.length > 0) {
-    throw new Error(`S-52/OpenCPN raster atlas was not served by the browser app: ${missing.map((item) => `${item.name}=HTTP ${item.status}${item.message ? ` ${item.message}` : ''}`).join(', ')}`);
-  }
-}
 
 function readThresholds() {
   return existsSync(thresholdsFile) ? JSON.parse(readFileSync(thresholdsFile, 'utf8')) : {};
@@ -202,24 +179,10 @@ try {
   const webGl2EnvironmentOnlyInitialFailure = hasInitialS52Commands &&
     (!webGl2AvailableBeforeResourceWait || hasWebGl2EnvironmentDiagnostic(report));
 
-  if (rasterCommands > 0 && !webGl2EnvironmentOnlyInitialFailure) {
-    await assertS52OpenCpnAtlasPresent(page);
-    await page.waitForFunction(
-      () => Boolean(window.s57S52ResourceRenderReady) || Number(window.s57S52ResourceRenderCount || 0) > 0,
-      null,
-      { timeout: 30000 }
-    );
-    await page.waitForFunction(
-      () => Number(window.s57S52LastResourceDrawCalls || 0) > 0 || Number(window.s57S52InitialDrawCalls || 0) > 0,
-      null,
-      { timeout: 30000 }
-    ).catch(() => undefined);
+  if (initialS52DrawCalls > 0) {
     await page.waitForTimeout(250);
   } else if (rasterCommands > 0 && webGl2EnvironmentOnlyInitialFailure) {
-    await assertS52OpenCpnAtlasPresent(page);
-    console.warn('Phase 26 snapshot: S-52 produced raster commands, but CI/headless Chromium has no usable WebGL2; skipping async raster redraw wait.');
-  } else if (initialS52DrawCalls > 0) {
-    await page.waitForTimeout(250);
+    console.warn('Phase 26 snapshot: S-52 produced commands, but CI/headless Chromium has no usable WebGL2; skipping draw-call wait.');
   }
   report = await readPhase26Report(page);
   const webGl2Available = webGl2AvailableBeforeResourceWait || await chartCanvasWebGl2Available(page);

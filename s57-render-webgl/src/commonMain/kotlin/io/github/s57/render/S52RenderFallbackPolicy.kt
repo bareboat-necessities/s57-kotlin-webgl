@@ -10,7 +10,7 @@ val S52RenderSummary.usedGeometryFallback: Boolean
  * debug glyphs and colors so parser/projection work can be inspected.  It must
  * not be promoted to an automatic browser fallback once the S-52 route has
  * decoded the chart and produced GPU output, because doing so draws the red
- * diamonds/crosses seen in snapshots instead of the OpenCPN symbol atlas.
+ * diamonds/crosses seen in snapshots instead of the S-52/OpenCPN portrayal.
  */
 fun S52RenderSummary.needsGeometryFallback(projectedSourceFeatureCount: Int): Boolean =
     needsGeometryFallback(projectedSourceFeatureCount = projectedSourceFeatureCount, projectedLinearOrAreaFeatureCount = 0)

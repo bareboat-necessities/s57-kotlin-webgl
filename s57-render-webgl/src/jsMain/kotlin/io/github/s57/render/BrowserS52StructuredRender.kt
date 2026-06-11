@@ -116,7 +116,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         }
         val waitingForRasterAssets = stats.drawCalls <= 0 && portrayed.rasterCommandCount > 0
         val effectiveMessage = when {
-            waitingForRasterAssets -> message + "; waiting for OpenCPN raster atlas resources to load asynchronously"
+            waitingForRasterAssets -> message + "; waiting for S-52 asynchronous resource redraw"
             missingLinearOrAreaOutput -> message + "; S-52 emitted no line/area draw calls for source line/area features=" + linearOrAreaFeatureCount +
                 " but decoded debug geometry fallback is suppressed"
             else -> message
