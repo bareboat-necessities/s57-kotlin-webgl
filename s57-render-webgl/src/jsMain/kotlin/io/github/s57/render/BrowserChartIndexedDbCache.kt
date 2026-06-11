@@ -350,7 +350,8 @@ private fun Any?.toS57DatasetOrNull(): S57Dataset? = try {
         val featuresRow = row.features
         val length = (featuresRow.length as Number).toInt()
         val features = (0 until length).mapNotNull { index -> featuresRow[index].toS57FeatureOrNull() }
-        S57Dataset(summary = summary.copy(featureCount = summary.featureCount.takeIf { it > 0 } ?: features.size), features = features)
+        val featureCount = summary.featureCount.takeIf { count -> count > 0 } ?: features.size
+        S57Dataset(summary = summary.copy(featureCount = featureCount), features = features)
     }
 } catch (_: Throwable) {
     null
@@ -425,7 +426,7 @@ private fun Any?.toS57GeometryOrNull(): S57Geometry? = try {
     val row = this.asDynamic()
     when (row.type as? String) {
         "empty" -> S57Geometry.Empty
-        "point" -> row.coordinate.toGeoPointOrNull()?.let { S57Geometry.Point(it) }
+        "point" -> row.coordinate.toGeoPointOrNull()?.let { coordinate -> S57Geometry.Point(coordinate) }
         "multipoint" -> S57Geometry.MultiPoint(row.points.toGeoPointList())
         "linestring" -> S57Geometry.LineString(row.points.toGeoPointList())
         "polygon" -> S57Geometry.Polygon(row.rings.toGeoPointRings())
