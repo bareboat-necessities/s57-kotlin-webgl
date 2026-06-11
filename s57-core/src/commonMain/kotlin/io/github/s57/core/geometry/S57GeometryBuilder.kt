@@ -168,15 +168,64 @@ class S57GeometryBuilder(
             if (ring != null) return S57Geometry.Polygon(listOf(ring))
         }
 
-        val segments = referenced.map { (ref, vector) -> vector.segmentPoints(context).oriented(ref.orientation) }
-        val rings = stitchSegments(segments, closeRing = true).filter { it.size >= 4 && it.first() == it.last() }
+        val ringSegments = referenced.map { (ref, vector) ->
+            AreaSegment(
+                points = vector.segmentPoints(context).oriented(ref.orientation),
+                usage = ref.usage
+            )
+        }
+        val rings = stitchAreaRings(ringSegments)
         if (rings.isEmpty()) {
             diagnostics += S57GeometryDiagnostic(featureId, S57GeometryDiagnosticSeverity.Warning, "Could not assemble closed area ring")
             return lineGeometry(referenced, context)
         }
-        val openCount = segments.size - rings.size
-        if (openCount > 0) diagnostics += S57GeometryDiagnostic(featureId, S57GeometryDiagnosticSeverity.Info, "Assembled ${rings.size} ring(s) from ${segments.size} edge segment(s)")
-        return S57Geometry.Polygon(rings)
+        val openCount = ringSegments.size - rings.size
+        if (openCount > 0) diagnostics += S57GeometryDiagnostic(featureId, S57GeometryDiagnosticSeverity.Info, "Assembled ${rings.size} ring(s) from ${ringSegments.size} edge segment(s)")
+        return areaFromRings(rings)
+    }
+
+
+    private fun stitchAreaRings(segments: List<AreaSegment>): List<AreaRing> {
+        val grouped = segments.groupBy { it.usage }
+        val rings = mutableListOf<AreaRing>()
+        grouped.forEach { (usage, group) ->
+            stitchSegments(group.map { it.points }, closeRing = true)
+                .filter { it.size >= 4 && it.first() == it.last() }
+                .forEach { rings += AreaRing(it, usage) }
+        }
+        return rings
+    }
+
+    private fun areaFromRings(rings: List<AreaRing>): S57Geometry {
+        val exterior = rings.filter { it.usage != USAGE_INTERIOR_RING }
+        val interior = rings.filter { it.usage == USAGE_INTERIOR_RING }
+        if (exterior.isEmpty()) return S57Geometry.Polygon(rings.map { it.points })
+        if (exterior.size == 1) return S57Geometry.Polygon(listOf(exterior.single().points) + interior.map { it.points })
+
+        val holesByExterior = exterior.associateWith { mutableListOf<List<GeoPoint>>() }
+        interior.forEach { hole ->
+            val target = exterior.firstOrNull { ext -> hole.points.firstOrNull()?.let { ext.points.containsPoint(it) } == true }
+                ?: exterior.first()
+            holesByExterior.getValue(target) += hole.points
+        }
+        return S57Geometry.MultiPolygon(
+            exterior.map { ext -> S57Geometry.Polygon(listOf(ext.points) + holesByExterior.getValue(ext)) }
+        )
+    }
+
+    private fun List<GeoPoint>.containsPoint(point: GeoPoint): Boolean {
+        if (size < 4) return false
+        var inside = false
+        var j = lastIndex
+        for (i in indices) {
+            val pi = this[i]
+            val pj = this[j]
+            val intersects = (pi.lat > point.lat) != (pj.lat > point.lat) &&
+                point.lon < (pj.lon - pi.lon) * (point.lat - pi.lat) / (pj.lat - pi.lat) + pi.lon
+            if (intersects) inside = !inside
+            j = i
+        }
+        return inside
     }
 
     private fun lineOrPointFallback(referenced: List<Pair<S57SpatialReference, S57RawVectorRecord>>, context: BuildContext): S57Geometry {
@@ -291,6 +340,16 @@ class S57GeometryBuilder(
         return GeoBounds(minLon, minLat, maxLon, maxLat)
     }
 
+    private data class AreaSegment(
+        val points: List<GeoPoint>,
+        val usage: Int
+    )
+
+    private data class AreaRing(
+        val points: List<GeoPoint>,
+        val usage: Int
+    )
+
     private data class BuildContext(
         val coordinateMultiplier: Int,
         val soundingMultiplier: Int,
@@ -302,21 +361,23 @@ class S57GeometryBuilder(
         const val DEFAULT_SOMF: Int = 10
         const val ORIENTATION_REVERSE: Int = 2
         private const val EDGE_RECORD_NAME: Int = 130
+        private const val USAGE_INTERIOR_RING: Int = 2
 
         private val AREA_OBJECT_CLASSES: Set<String> = setOf(
-            "ACHARE", "ADMARE", "AIRARE", "CBLARE", "CONZNE", "COSARE", "CTNARE",
-            "DEPARE", "DMPGRD", "DOCARE", "DRGARE", "DWRTCL", "EXEZNE", "FAIRWY",
-            "FSHGRD", "FSHZNE", "HRBARE", "ICNARE", "ISTZNE", "LAKARE", "LNDARE",
-            "MIPARE", "M_COVR", "M_NPUB", "M_NSYS", "M_QUAL", "M_SDAT", "M_SREL",
-            "M_UNIT", "OSPARE", "PIPARE", "PRCARE", "PRDARE", "RESARE", "SBDARE",
-            "SEAARE", "SPLARE", "TESARE", "TSEZNE", "TSSCRS", "TSSRON", "TSSLPT",
-            "TSSBND", "UNSARE"
+            "ACHARE", "ADMARE", "AIRARE", "BUAARE", "CBLARE", "CONZNE", "COSARE", "CTSARE", "CTNARE",
+            "CUSZNE", "DEPARE", "DMPGRD", "DOCARE", "DRGARE", "DWRTCL", "EXEZNE", "FAIRWY",
+            "FRPARE", "FSHGRD", "FSHZNE", "HRBARE", "ICEARE", "ICNARE", "ISTZNE", "LAKARE", "LNDARE",
+            "LOKBSN", "MIPARE", "M_ACCY", "M_COVR", "M_HDAT", "M_HOPA", "M_NPUB", "M_NSYS", "M_PROD",
+            "M_QUAL", "M_SDAT", "M_SREL", "M_UNIT", "M_VDAT", "OSPARE", "PIPARE", "PRCARE", "PRDARE",
+            "RESARE", "SBDARE", "SEAARE", "SPLARE", "SWPARE", "TESARE", "TSEZNE", "TSSCRS", "TSSRON",
+            "TSSLPT", "TSSBND", "UNSARE"
         )
 
         private val LINE_OBJECT_CLASSES: Set<String> = setOf(
-            "CBLOHD", "CBLSUB", "COALNE", "CONVYR", "DAMCON", "DEPCNT", "DYKCON",
-            "FERYRT", "MORFAC", "PIPOHD", "PIPSOL", "RADRNG", "RAILWY", "RIVERS",
-            "ROADWY", "SLCONS", "TSELNE", "TSSBND", "TSSLPT"
+            "CANALS", "CANBNK", "CBLOHD", "CBLSUB", "COALNE", "CONVYR", "DAMCON", "DEPCNT", "DYKCON",
+            "FNCLNE", "FERYRT", "LAKSHR", "MORFAC", "NAVLNE", "PIPOHD", "PIPSOL", "RADLNE", "RADRNG",
+            "RAILWY", "RECTRC", "RCTLPT", "RIVERS", "RIVBNK", "ROADWY", "SLCONS", "STSLNE", "TIDEWY",
+            "TSELNE", "TSSBND", "TSSLPT"
         )
     }
 }

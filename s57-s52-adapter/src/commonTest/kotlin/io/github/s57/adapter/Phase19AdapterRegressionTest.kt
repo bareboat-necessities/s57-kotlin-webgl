@@ -55,7 +55,7 @@ class Phase19AdapterRegressionTest {
     }
 
     @Test
-    fun distinguishesUnsupportedObjectClassesFromUnsupportedAttributes() {
+    fun preservesUnknownObjectClassesForFallbackPortrayalWhileReportingThem() {
         val features = listOf(
             S57Feature(
                 id = 1,
@@ -71,7 +71,8 @@ class Phase19AdapterRegressionTest {
         )
 
         val result = S57ToS52Adapter().adaptFeatures(features)
-        assertEquals(1, result.features.size)
+        assertEquals(2, result.features.size)
+        assertEquals(listOf("OBJL_9999", "BOYLAT"), result.features.map { it.objectClassAcronym })
         assertEquals(1, result.unsupportedObjectClassCount)
         assertEquals(1, result.unsupportedAttributeCount)
     }
