@@ -441,15 +441,34 @@ fun main() {
                 loaded.fold(
                     onSuccess = { dataset ->
                         if (dataset == null) {
-                            failures = failures + (entry.fileName + ": cached object dataset missing; re-import this cell so objects are persisted")
+                            chartCache.load(entry.cacheKey) { payloadResult ->
+                                payloadResult.fold(
+                                    onSuccess = { cached ->
+                                        if (cached == null) {
+                                            failures = failures + (entry.fileName + ": cached dataset and payload bytes are missing; re-import this cell")
+                                        } else {
+                                            try {
+                                                imports = imports + engine.importS57ByteSequence(cached.payloads)
+                                            } catch (t: Throwable) {
+                                                failures = failures + (entry.fileName + ": payload restore failed: " + (t.message ?: t.toString()))
+                                            }
+                                        }
+                                        next(index + 1)
+                                    },
+                                    onFailure = {
+                                        failures = failures + (entry.fileName + ": payload cache load failed: " + (it.message ?: it.toString()))
+                                        next(index + 1)
+                                    }
+                                )
+                            }
                         } else {
                             try {
                                 imports = imports + engine.importDataset(dataset)
                             } catch (t: Throwable) {
                                 failures = failures + (entry.fileName + ": object restore failed: " + (t.message ?: t.toString()))
                             }
+                            next(index + 1)
                         }
-                        next(index + 1)
                     },
                     onFailure = {
                         failures = failures + (entry.fileName + ": object cache load failed: " + (it.message ?: it.toString()))
@@ -467,8 +486,6 @@ fun main() {
         if (imports.isNotEmpty()) {
             if (phase26SnapshotMode()) {
                 status?.textContent = "Imported ENC cells are ready for Phase 26 CI snapshot rendering.\n" + importSummary()
-            } else if (importedObjectCacheEntries.isNotEmpty()) {
-                restoreCachedPayloads(importedObjectCacheEntries)
             } else {
                 renderActive("imported ENC")
             }
