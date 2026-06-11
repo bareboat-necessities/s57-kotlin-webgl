@@ -90,7 +90,7 @@ private fun StringBuilder.appendFeature(feature: ProjectedFeature, includeLabels
     when (val geometry = feature.geometry) {
         is ProjectedGeometry.Empty -> Unit
         is ProjectedGeometry.Point -> appendPoint(geometry.point, feature)
-        is ProjectedGeometry.MultiPoint -> geometry.points.forEach { appendPoint(it, feature) }
+        is ProjectedGeometry.MultiPoint -> geometry.points.forEachIndexed { index, point -> appendPoint(point, feature, index) }
         is ProjectedGeometry.LineString -> appendPolyline(geometry.points, feature)
         is ProjectedGeometry.Polygon -> appendPolygon(geometry.rings, feature)
         is ProjectedGeometry.MultiPolygon -> geometry.polygons.forEach { appendPolygon(it.rings, feature) }
@@ -102,8 +102,13 @@ private fun StringBuilder.appendFeature(feature: ProjectedFeature, includeLabels
     }
 }
 
-private fun StringBuilder.appendPoint(point: ScreenPoint, feature: ProjectedFeature) {
-    appendLine("  <circle cx=\"${point.x}\" cy=\"${point.y}\" r=\"4\" fill=\"${colorFor(feature.objectClass)}\" stroke=\"#000000\" stroke-width=\"0.5\"/>")
+private fun StringBuilder.appendPoint(point: ScreenPoint, feature: ProjectedFeature, pointIndex: Int = 0) {
+    val soundingLabel = feature.soundingLabel(pointIndex)
+    if (soundingLabel != null) {
+        appendLine("  <text x=\"${point.x}\" y=\"${point.y}\" font-family=\"monospace\" font-size=\"11\" text-anchor=\"middle\" dominant-baseline=\"central\" fill=\"${colorFor(feature.objectClass)}\">${xml(soundingLabel)}</text>")
+    } else {
+        appendLine("  <circle cx=\"${point.x}\" cy=\"${point.y}\" r=\"4\" fill=\"${colorFor(feature.objectClass)}\" stroke=\"#000000\" stroke-width=\"0.5\"/>")
+    }
 }
 
 private fun StringBuilder.appendPolyline(points: List<ScreenPoint>, feature: ProjectedFeature) {

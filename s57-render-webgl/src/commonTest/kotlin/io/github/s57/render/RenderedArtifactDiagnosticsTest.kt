@@ -1,6 +1,10 @@
 package io.github.s57.render
 
 import io.github.s57.core.GeoBounds
+import io.github.s57.core.GeoPoint
+import io.github.s57.core.S57Feature
+import io.github.s57.core.S57Geometry
+import io.github.s57.core.S57Value
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -26,6 +30,38 @@ class RenderedArtifactDiagnosticsTest {
         assertTrue("<polyline" in svg)
         assertTrue("<circle" in svg)
         assertTrue("DEPARE" in svg)
+    }
+
+
+    @Test
+    fun rendersDepthSoundingsAsLabelsInsteadOfDots() {
+        val request = sampleRequest()
+        val sounding = ProjectedFeature(
+            featureId = 7,
+            objectClass = "SOUNDG",
+            geometry = ProjectedGeometry.MultiPoint(listOf(ScreenPoint(120.0, 140.0), ScreenPoint(180.0, 160.0))),
+            geoBounds = GeoBounds(-74.5, 39.5, -74.4, 39.6),
+            screenBounds = ScreenBounds(120.0, 140.0, 180.0, 160.0),
+            feature = S57Feature(
+                id = 7,
+                objectClass = "SOUNDG",
+                attributes = mapOf("VALSOU" to S57Value.ListValue(listOf(S57Value.Decimal(4.2), S57Value.Decimal(7.0)))),
+                geometry = S57Geometry.MultiPoint(listOf(GeoPoint(-74.5, 39.5), GeoPoint(-74.4, 39.6)))
+            )
+        )
+        val frame = StaticChartFrame(
+            request = request,
+            queriedFeatureCount = 1,
+            adaptedFeatureCount = 2,
+            projectedFeatures = listOf(sounding)
+        )
+
+        val svg = renderedArtifactSvgSnapshot(frame)
+
+        assertTrue("<text" in svg)
+        assertTrue(">4.2</text>" in svg)
+        assertTrue(">7</text>" in svg)
+        assertTrue("<circle" !in svg)
     }
 
     @Test
