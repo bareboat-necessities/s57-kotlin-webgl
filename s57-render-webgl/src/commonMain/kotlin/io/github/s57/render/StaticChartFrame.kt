@@ -4,6 +4,7 @@ import io.github.s57.core.GeoBounds
 import io.github.s57.core.GeoPoint
 import io.github.s57.core.S57Feature
 import io.github.s57.core.S57Geometry
+import io.github.s57.core.S57Value
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -27,6 +28,36 @@ data class ProjectedFeature(
     val screenBounds: ScreenBounds?,
     val feature: S57Feature? = null
 )
+
+
+internal fun ProjectedFeature.soundingLabel(pointIndex: Int = 0): String? {
+    if (!objectClass.equals("SOUNDG", ignoreCase = true)) return null
+    val value = feature?.attributes?.get("VALSOU") ?: return null
+    return value.soundingValueAt(pointIndex)?.formatSoundingValue()
+}
+
+private fun S57Value.soundingValueAt(pointIndex: Int): S57Value? = when (this) {
+    is S57Value.ListValue -> values.getOrNull(pointIndex) ?: values.firstOrNull()
+    is S57Value.Text -> value.split(',', ';', '|')
+        .mapNotNull { token -> token.trim().takeIf { it.isNotEmpty() } }
+        .let { tokens -> tokens.getOrNull(pointIndex) ?: tokens.firstOrNull() }
+        ?.let(S57Value::Text)
+    S57Value.Empty -> null
+    else -> this
+}
+
+private fun S57Value.formatSoundingValue(): String? = when (this) {
+    S57Value.Empty -> null
+    is S57Value.Integer -> value.toString()
+    is S57Value.Decimal -> value.formatSoundingDecimal()
+    is S57Value.Text -> value.trim().takeIf { it.isNotEmpty() }
+    is S57Value.ListValue -> values.firstOrNull()?.formatSoundingValue()
+}
+
+private fun Double.formatSoundingDecimal(): String {
+    val whole = toLong()
+    return if (this == whole.toDouble()) whole.toString() else toString().trimEnd('0').trimEnd('.')
+}
 
 data class ScreenBounds(
     val minX: Double,

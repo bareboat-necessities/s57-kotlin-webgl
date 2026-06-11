@@ -142,17 +142,29 @@ class BrowserS57WebGlRenderer(
             when (val geometry = feature.geometry) {
                 is ProjectedGeometry.Empty -> Unit
                 is ProjectedGeometry.Point -> {
-                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
-                        drawPointGlyph2d(context, geometry.point, feature.objectClass, colorFor(feature.objectClass))
-                        counts.points++
+                    if (includePointGlyphs) {
+                        if (feature.objectClass.uppercase() == "SOUNDG") {
+                            if (includeSoundingPointGlyphs && drawSoundingLabel2d(context, geometry.point, feature)) counts.points++
+                        } else {
+                            drawPointGlyph2d(context, geometry.point, feature.objectClass, colorFor(feature.objectClass))
+                            counts.points++
+                        }
                     }
                 }
                 is ProjectedGeometry.MultiPoint -> {
-                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
-                        geometry.points.forEach { point ->
-                            drawPointGlyph2d(context, point, feature.objectClass, colorFor(feature.objectClass))
+                    if (includePointGlyphs) {
+                        if (feature.objectClass.uppercase() == "SOUNDG") {
+                            if (includeSoundingPointGlyphs) {
+                                geometry.points.forEachIndexed { index, point ->
+                                    if (drawSoundingLabel2d(context, point, feature, index)) counts.points++
+                                }
+                            }
+                        } else {
+                            geometry.points.forEach { point ->
+                                drawPointGlyph2d(context, point, feature.objectClass, colorFor(feature.objectClass))
+                            }
+                            counts.points += geometry.points.size
                         }
-                        counts.points += geometry.points.size
                     }
                 }
                 is ProjectedGeometry.LineString -> {
@@ -191,6 +203,21 @@ class BrowserS57WebGlRenderer(
                 strokePath2d(context, ring.closedForStroke(), colorFor(objectClass), lineWidthFor(objectClass), closePath = false)
             }
         }
+        return true
+    }
+
+    private fun drawSoundingLabel2d(
+        context: CanvasRenderingContext2D,
+        point: ScreenPoint,
+        feature: ProjectedFeature,
+        pointIndex: Int = 0
+    ): Boolean {
+        val label = feature.soundingLabel(pointIndex) ?: return false
+        context.fillStyle = colorFor(feature.objectClass).toCssRgba()
+        context.asDynamic().font = "11px monospace"
+        context.asDynamic().textAlign = "center"
+        context.asDynamic().textBaseline = "middle"
+        context.fillText(label, point.x, point.y)
         return true
     }
 
@@ -316,13 +343,13 @@ class BrowserS57WebGlRenderer(
             when (val geometry = feature.geometry) {
                 is ProjectedGeometry.Empty -> Unit
                 is ProjectedGeometry.Point -> {
-                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                    if (includePointGlyphs && feature.objectClass.uppercase() != "SOUNDG") {
                         drawPointGlyph(program, geometry.point, canvas, feature.objectClass, colorFor(feature.objectClass))
                         counts.points++
                     }
                 }
                 is ProjectedGeometry.MultiPoint -> {
-                    if (includePointGlyphs && (includeSoundingPointGlyphs || feature.objectClass.uppercase() != "SOUNDG")) {
+                    if (includePointGlyphs && feature.objectClass.uppercase() != "SOUNDG") {
                         geometry.points.forEach { point -> drawPointGlyph(program, point, canvas, feature.objectClass, colorFor(feature.objectClass)) }
                         counts.points += geometry.points.size
                     }
