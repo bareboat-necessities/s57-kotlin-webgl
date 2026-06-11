@@ -17,8 +17,13 @@ data class ChartRenderRequest(
     ),
     val centerCrosshair: CenterCrosshairConfig = CenterCrosshairConfig(),
     val depthMesh: DepthMeshConfig = DepthMeshConfig(),
-    val renderMode: ChartRenderMode = ChartRenderMode.Flat2D
-)
+    val renderMode: ChartRenderMode = ChartRenderMode.Flat2D,
+    /** Chart cells to quilt into this frame. Defaults to the active cell for API compatibility. */
+    val cellIds: List<String> = listOf(cellId)
+) {
+    val renderCellIds: List<String> get() = cellIds.mapNotNull { it.takeIf(String::isNotBlank) }.distinct().ifEmpty { listOf(cellId) }
+}
+
 
 enum class ChartRenderMode {
     Flat2D,

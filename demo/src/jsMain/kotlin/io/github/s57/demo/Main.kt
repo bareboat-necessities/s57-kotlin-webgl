@@ -7,7 +7,6 @@ import io.github.s57.render.BrowserChartIndexedDbCache
 import io.github.s57.render.BrowserChartInput
 import io.github.s57.render.BrowserS57FileImporter
 import io.github.s57.render.BrowserS57WebGlRenderer
-import io.github.s57.render.CachedChartPayload
 import io.github.s57.render.ChartInteractionController
 import io.github.s57.render.ChartInteractionListener
 import io.github.s57.render.ChartUserEvent
@@ -130,6 +129,7 @@ fun main() {
     var selectedFiles = emptyList<File>()
     var selectedLabels = emptyList<String>()
     var activeScaleOverride: Double? = null
+    var importedObjectCacheEntries = emptyList<BrowserChartCacheEntry>()
     var latestPipelineReport = RenderPipelineDiagnosticReport(
         metadata = mapOf("status" to "Phase 26 viewer initialized; no render has completed yet")
     )
@@ -163,6 +163,9 @@ fun main() {
     fun activeCell(): S57CellSummary? = activeCellId?.let { id -> cells().firstOrNull { it.cellId == id } }
         ?: cells().firstOrNull { it.bounds != null }
         ?: cells().firstOrNull()
+
+    fun displayedChartIds(): List<String> = cells().filter { it.bounds != null }.map { it.cellId }
+        .ifEmpty { activeCell()?.let { listOf(it.cellId) } ?: emptyList() }
 
     fun formatBounds(bounds: GeoBounds?): String = bounds?.let {
         "W=${it.minLon}, S=${it.minLat}, E=${it.maxLon}, N=${it.maxLat}"
@@ -271,7 +274,8 @@ fun main() {
             return
         }
         chartCanvas.dispatch(ChartCanvasCommand.Resize(ScreenSize(canvas.width, canvas.height)))
-        chartCanvas.dispatch(ChartCanvasCommand.ShowCharts(listOf(cell.cellId), fitToFirstChart = true))
+        val chartIds = displayedChartIds().let { ids -> listOf(cell.cellId) + ids.filterNot { it == cell.cellId } }
+        chartCanvas.dispatch(ChartCanvasCommand.ShowCharts(chartIds, fitToFirstChart = true))
         val fullCellRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
         val autoScale = boundsFraction?.let { fraction ->
             val bounds = snapshotBounds(cell, fraction) ?: fullCellRequest.bounds
@@ -334,7 +338,7 @@ fun main() {
             )
         publishPhase26Report(combinedReport)
         status?.textContent = buildString {
-            appendLine("Rendered " + label + " cell=" + cell.cellId)
+            appendLine("Rendered " + label + " activeCell=" + cell.cellId + " quiltedCells=" + canvasStatus.displayedChartIds.size)
             appendLine("chartCanvas displayed=" + canvasStatus.displayedChartIds.joinToString(",") + " cursor=" + canvasStatus.cursor + " center=" + canvasStatus.center)
             appendLine("viewportFit bounds=" + canvasStatus.bounds + " scale=" + canvasStatus.scaleDenominator + " palette=" + canvasStatus.paletteName)
             appendLine("Phase16 diagnostics:")
@@ -387,6 +391,7 @@ fun main() {
         activeCellId = null
         activeScaleOverride = null
         scaleInput.value = ""
+        importedObjectCacheEntries = emptyList()
         selectedFiles = emptyList()
         selectedLabels = emptyList()
         updateFileList()
@@ -412,6 +417,8 @@ fun main() {
         if (imports.isNotEmpty()) {
             if (phase26SnapshotMode()) {
                 status?.textContent = "Imported ENC cells are ready for Phase 26 CI snapshot rendering.\n" + importSummary()
+            } else if (importedObjectCacheEntries.isNotEmpty()) {
+                restoreCachedPayloads(importedObjectCacheEntries)
             } else {
                 renderActive("imported ENC")
             }
@@ -446,8 +453,14 @@ fun main() {
                 imports = imports + imported
                 updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
                 updateCellSummary()
-                next(index + 1)
-                cacheImportedPayloadSequence(group.label, ordered.map { it.bytes }, imported)
+                chartCache.putSequence(group.label, ordered.map { it.bytes }, imported) { result ->
+                    result.fold(
+                        onSuccess = { entry -> importedObjectCacheEntries = importedObjectCacheEntries + entry },
+                        onFailure = { failures = failures + (group.label + ": object cache failed: " + (it.message ?: it.toString())) }
+                    )
+                    refreshCacheList()
+                    next(index + 1)
+                }
             } catch (t: Throwable) {
                 failures = failures + (group.label + ": " + (t.message ?: t.toString()))
                 next(index + 1)
@@ -463,6 +476,7 @@ fun main() {
         activeCellId = null
         activeScaleOverride = null
         scaleInput.value = ""
+        importedObjectCacheEntries = emptyList()
         selectedFiles = files
         selectedLabels = labels
         updateFileList()
@@ -530,6 +544,7 @@ fun main() {
         activeCellId = null
         activeScaleOverride = null
         scaleInput.value = ""
+        importedObjectCacheEntries = emptyList()
         selectedFiles = emptyList()
         selectedLabels = entries.map { "cached: " + it.label() }
         updateFileList()
@@ -547,23 +562,23 @@ fun main() {
                 return
             }
             val entry = entries[index]
-            status?.textContent = "Restoring cached " + entry.fileName + " (" + (index + 1) + "/" + entries.size + ")..."
-            chartCache.load(entry.cacheKey) { loaded ->
+            status?.textContent = "Restoring cached chart objects " + entry.fileName + " (" + (index + 1) + "/" + entries.size + ")..."
+            chartCache.loadDataset(entry.cacheKey) { loaded ->
                 loaded.fold(
-                    onSuccess = { payload: CachedChartPayload? ->
-                        if (payload == null) {
-                            failures = failures + (entry.fileName + ": cached payload missing")
+                    onSuccess = { dataset ->
+                        if (dataset == null) {
+                            failures = failures + (entry.fileName + ": cached object dataset missing; re-import this cell so objects are persisted")
                         } else {
                             try {
-                                imports = imports + engine.importS57ByteSequence(payload.payloads)
+                                imports = imports + engine.importDataset(dataset)
                             } catch (t: Throwable) {
-                                failures = failures + (entry.fileName + ": restore failed: " + (t.message ?: t.toString()))
+                                failures = failures + (entry.fileName + ": object restore failed: " + (t.message ?: t.toString()))
                             }
                         }
                         next(index + 1)
                     },
                     onFailure = {
-                        failures = failures + (entry.fileName + ": cache load failed: " + (it.message ?: it.toString()))
+                        failures = failures + (entry.fileName + ": object cache load failed: " + (it.message ?: it.toString()))
                         next(index + 1)
                     }
                 )
@@ -593,6 +608,7 @@ fun main() {
         activeCellId = null
         activeScaleOverride = null
         scaleInput.value = ""
+        importedObjectCacheEntries = emptyList()
         selectedFiles = emptyList()
         selectedLabels = listOf("bundled: data/statue-liberty.000")
         updateFileList()

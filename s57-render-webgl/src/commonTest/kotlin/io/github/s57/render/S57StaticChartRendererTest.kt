@@ -27,6 +27,21 @@ class S57StaticChartRendererTest {
         assertTrue(frame.projectedFeatures.any { it.objectClass == "DEPCNT" })
     }
 
+
+    @Test
+    fun preparesQuiltedFrameFromMultipleIndexedCells() {
+        val store = InMemoryS57IndexStore()
+        store.importDataset(sampleDataset())
+        store.importDataset(secondaryDataset())
+        val frame = S57StaticChartRenderer(store).prepareFrame(
+            request().copy(cellIds = listOf("TESTCELL", "NEXTCELL"))
+        )
+
+        assertEquals(4, frame.queriedFeatureCount)
+        assertEquals(4, frame.projectedFeatures.size)
+        assertTrue(frame.projectedFeatures.any { it.featureId == 88L && it.objectClass == "BOYCAR" })
+    }
+
     @Test
     fun centerCrosshairHitTestFindsAreaAtCenter() {
         val store = InMemoryS57IndexStore()
@@ -51,6 +66,23 @@ class S57StaticChartRendererTest {
             viewport = ScreenSize(1000, 500)
         ),
         renderMode = ChartRenderMode.Tilted2D
+    )
+
+
+    private fun secondaryDataset(): S57Dataset = S57Dataset(
+        summary = S57CellSummary(
+            cellId = "NEXTCELL",
+            name = "NEXTCELL",
+            bounds = GeoBounds(-75.0, 39.0, -73.0, 41.0),
+            featureCount = 1
+        ),
+        features = listOf(
+            S57Feature(
+                id = 88L,
+                objectClass = "BOYCAR",
+                geometry = S57Geometry.Point(GeoPoint(-73.6, 40.2))
+            )
+        )
     )
 
     private fun sampleDataset(): S57Dataset = S57Dataset(

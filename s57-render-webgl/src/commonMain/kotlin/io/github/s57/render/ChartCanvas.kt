@@ -140,12 +140,14 @@ class S57ChartCanvas(
             return
         }
         if (fitToFirstChart) {
-            val cell = activeCell()
-            if (cell == null || cell.bounds == null) {
-                reject(command, "Active chart is not imported or has no bounds")
+            val cells = displayedCells()
+            val fitBounds = cells.mapNotNull { it.bounds }.unionOrNull()
+            val active = cells.firstOrNull()
+            if (active == null || fitBounds == null) {
+                reject(command, "Displayed charts are not imported or have no bounds")
                 return
             }
-            fitCell(cell)
+            fitCharts(active, fitBounds)
         }
         render("show charts")
     }
@@ -160,16 +162,31 @@ class S57ChartCanvas(
     private fun itScale(): Double = status.scaleDenominator ?: currentRequest?.scaleDenominator ?: 40_000.0
 
     private fun fitCell(cell: S57CellSummary) {
-        val request = chartRenderRequestForCell(cell, status.rectangle.widthPx, status.rectangle.heightPx)
-            .copy(
-                paletteName = status.paletteName,
-                centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
-                depthMesh = DepthMeshConfig(enabled = false),
-                renderMode = ChartRenderMode.Flat2D
-            )
+        fitCharts(cell, requireNotNull(cell.bounds) { "Cell ${cell.cellId} has no bounds" })
+    }
+
+    private fun fitCharts(activeCell: S57CellSummary, bounds: GeoBounds) {
+        val fit = chartViewportFitForBounds(bounds, status.rectangle, paddingFraction = 0.08)
+        val request = ChartRenderRequest(
+            cellId = activeCell.cellId,
+            bounds = fit.fittedBounds,
+            widthPx = status.rectangle.widthPx,
+            heightPx = status.rectangle.heightPx,
+            scaleDenominator = fit.scaleDenominator,
+            paletteName = status.paletteName,
+            camera = ChartCameraState(
+                center = fit.cameraCenter,
+                zoom = fit.scaleDenominator,
+                viewport = status.rectangle
+            ),
+            centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
+            depthMesh = DepthMeshConfig(enabled = false),
+            renderMode = ChartRenderMode.Flat2D,
+            cellIds = status.displayedChartIds.ifEmpty { listOf(activeCell.cellId) }
+        )
         currentRequest = request
         status = status.copy(
-            activeChartId = cell.cellId,
+            activeChartId = activeCell.cellId,
             scaleDenominator = request.scaleDenominator,
             center = request.camera.center,
             bounds = request.bounds,
@@ -186,6 +203,7 @@ class S57ChartCanvas(
         }
         val refreshedRequest = request.copy(
             paletteName = status.paletteName,
+            cellIds = status.displayedChartIds.ifEmpty { request.renderCellIds },
             scaleDenominator = status.scaleDenominator ?: request.scaleDenominator,
             camera = request.camera.copy(
                 center = status.center ?: request.camera.center,
@@ -299,6 +317,11 @@ class S57ChartCanvas(
         if (cell != null && currentRequest == null) fitCell(cell)
     }
 
+    private fun displayedCells(): List<S57CellSummary> {
+        val byId = engine.listCells().associateBy { it.cellId }
+        return status.displayedChartIds.mapNotNull { byId[it] }
+    }
+
     private fun activeCell(): S57CellSummary? = status.activeChartId?.let { id -> engine.listCells().firstOrNull { it.cellId == id } }
 
     private fun reject(command: ChartCanvasCommand, reason: String) {
@@ -323,3 +346,19 @@ private fun GeoBounds.translated(deltaLon: Double, deltaLat: Double): GeoBounds 
     maxLon = maxLon + deltaLon,
     maxLat = maxLat + deltaLat
 )
+
+
+private fun List<GeoBounds>.unionOrNull(): GeoBounds? {
+    if (isEmpty()) return null
+    var minLon = first().minLon
+    var minLat = first().minLat
+    var maxLon = first().maxLon
+    var maxLat = first().maxLat
+    for (bounds in drop(1)) {
+        minLon = kotlin.math.min(minLon, bounds.minLon)
+        minLat = kotlin.math.min(minLat, bounds.minLat)
+        maxLon = kotlin.math.max(maxLon, bounds.maxLon)
+        maxLat = kotlin.math.max(maxLat, bounds.maxLat)
+    }
+    return GeoBounds(minLon, minLat, maxLon, maxLat)
+}

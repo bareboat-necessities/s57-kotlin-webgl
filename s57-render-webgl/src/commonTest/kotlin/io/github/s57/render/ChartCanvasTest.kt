@@ -42,6 +42,29 @@ class ChartCanvasTest {
         assertTrue(events.any { it is ChartCanvasEvent.CursorMoved })
     }
 
+
+    @Test
+    fun showChartsRendersMultipleCellsOnOneFrame() {
+        val engine = S57WebGlEngine()
+        engine.importDataset(testDataset())
+        engine.importDataset(testDataset("US5TWO", GeoPoint(-73.8, 40.1), "BOYCAR"))
+        var lastFrame: StaticChartFrame? = null
+        val canvas = S57ChartCanvas(
+            engine = engine,
+            frameRenderer = ChartCanvasFrameRenderer { frame ->
+                lastFrame = frame
+                frame.summary()
+            },
+            initialSize = ScreenSize(800, 600)
+        )
+
+        canvas.dispatch(ChartCanvasCommand.ShowCharts(listOf("US5TEST", "US5TWO")))
+
+        assertEquals(listOf("US5TEST", "US5TWO"), canvas.status().displayedChartIds)
+        assertEquals(listOf("US5TEST", "US5TWO"), lastFrame?.request?.renderCellIds)
+        assertTrue(lastFrame?.projectedFeatures?.any { it.objectClass == "BOYCAR" } == true)
+    }
+
     @Test
     fun pressPublishesSelectionEventsFromLastFrame() {
         val engine = S57WebGlEngine()
@@ -64,9 +87,13 @@ class ChartCanvasTest {
         assertEquals("BOYLAT", canvas.status().lastSelectedObject?.objectClass)
     }
 
-    private fun testDataset(): S57Dataset = S57Dataset(
+    private fun testDataset(
+        cellId: String = "US5TEST",
+        point: GeoPoint = GeoPoint(-74.0, 40.0),
+        objectClass: String = "BOYLAT"
+    ): S57Dataset = S57Dataset(
         summary = S57CellSummary(
-            cellId = "US5TEST",
+            cellId = cellId,
             name = "Test",
             bounds = GeoBounds(-75.0, 39.0, -73.0, 41.0),
             featureCount = 1
@@ -74,8 +101,8 @@ class ChartCanvasTest {
         features = listOf(
             S57Feature(
                 id = 7L,
-                objectClass = "BOYLAT",
-                geometry = S57Geometry.Point(GeoPoint(-74.0, 40.0))
+                objectClass = objectClass,
+                geometry = S57Geometry.Point(point)
             )
         )
     )
