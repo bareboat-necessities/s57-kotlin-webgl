@@ -74,9 +74,11 @@ class BrowserChartIndexedDbCache(
                         row.cellId = entry.cellId
                         row.featureCount = entry.featureCount
                         row.cachedAtMillis = entry.cachedAtMillis
-                        // Persist decoded chart objects. ZIP/S-57 bytes are a transfer method and are not
-                        // needed for rendering once the object dataset is in IndexedDB.
+                        // Persist decoded chart objects for fast restore, and keep the original payloads
+                        // as a fallback for older/newer schema gaps or structured-clone incompatibilities.
                         row.dataset = importResult.sourceImport?.dataset?.toIndexedDbRowDataset()
+                        row.payloads = payloads.map { it.toInt8Array() }.toTypedArray()
+                        row.payload = payloads.firstOrNull()?.toInt8Array()
 
                         val tx = db.asDynamic().transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
