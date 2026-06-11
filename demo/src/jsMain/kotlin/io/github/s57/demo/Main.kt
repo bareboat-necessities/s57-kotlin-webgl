@@ -399,16 +399,66 @@ fun main() {
         status?.textContent = "Cleared imported cells. Browser cache is unchanged."
     }
 
-    fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult) {
-        cacheImportedPayloadSequence(fileName, listOf(bytes), imported)
-    }
-
     fun cacheImportedPayloadSequence(fileName: String, payloads: List<ByteArray>, imported: S57EngineImportResult) {
         chartCache.putSequence(fileName, payloads, imported) { result ->
             result.onFailure { failures = failures + (fileName + ": cache failed: " + (it.message ?: it.toString())) }
             updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
             refreshCacheList()
         }
+    }
+
+    fun cacheImportedPayload(fileName: String, bytes: ByteArray, imported: S57EngineImportResult) {
+        cacheImportedPayloadSequence(fileName, listOf(bytes), imported)
+    }
+
+    fun restoreCachedPayloads(entries: List<BrowserChartCacheEntry>) {
+        engine.clear()
+        imports = emptyList()
+        failures = emptyList()
+        activeCellId = null
+        activeScaleOverride = null
+        scaleInput.value = ""
+        importedObjectCacheEntries = emptyList()
+        selectedFiles = emptyList()
+        selectedLabels = entries.map { "cached: " + it.label() }
+        updateFileList()
+        updateCellSummary()
+        if (entries.isEmpty()) {
+            status?.textContent = "No cached cells to restore."
+            return
+        }
+        fun next(index: Int) {
+            if (index >= entries.size) {
+                activeCellId = chooseInitialActiveCell(cells(), activeCellId)
+                updateCellSummary()
+                status?.textContent = "Restored cached cells.\n" + importSummary()
+                renderActive("restored cache")
+                return
+            }
+            val entry = entries[index]
+            status?.textContent = "Restoring cached chart objects " + entry.fileName + " (" + (index + 1) + "/" + entries.size + ")..."
+            chartCache.loadDataset(entry.cacheKey) { loaded ->
+                loaded.fold(
+                    onSuccess = { dataset ->
+                        if (dataset == null) {
+                            failures = failures + (entry.fileName + ": cached object dataset missing; re-import this cell so objects are persisted")
+                        } else {
+                            try {
+                                imports = imports + engine.importDataset(dataset)
+                            } catch (t: Throwable) {
+                                failures = failures + (entry.fileName + ": object restore failed: " + (t.message ?: t.toString()))
+                            }
+                        }
+                        next(index + 1)
+                    },
+                    onFailure = {
+                        failures = failures + (entry.fileName + ": object cache load failed: " + (it.message ?: it.toString()))
+                        next(index + 1)
+                    }
+                )
+            }
+        }
+        next(0)
     }
 
     fun finishImport() {
@@ -535,56 +585,6 @@ fun main() {
             }
         }
         collect(0)
-    }
-
-    fun restoreCachedPayloads(entries: List<BrowserChartCacheEntry>) {
-        engine.clear()
-        imports = emptyList()
-        failures = emptyList()
-        activeCellId = null
-        activeScaleOverride = null
-        scaleInput.value = ""
-        importedObjectCacheEntries = emptyList()
-        selectedFiles = emptyList()
-        selectedLabels = entries.map { "cached: " + it.label() }
-        updateFileList()
-        updateCellSummary()
-        if (entries.isEmpty()) {
-            status?.textContent = "No cached cells to restore."
-            return
-        }
-        fun next(index: Int) {
-            if (index >= entries.size) {
-                activeCellId = chooseInitialActiveCell(cells(), activeCellId)
-                updateCellSummary()
-                status?.textContent = "Restored cached cells.\n" + importSummary()
-                renderActive("restored cache")
-                return
-            }
-            val entry = entries[index]
-            status?.textContent = "Restoring cached chart objects " + entry.fileName + " (" + (index + 1) + "/" + entries.size + ")..."
-            chartCache.loadDataset(entry.cacheKey) { loaded ->
-                loaded.fold(
-                    onSuccess = { dataset ->
-                        if (dataset == null) {
-                            failures = failures + (entry.fileName + ": cached object dataset missing; re-import this cell so objects are persisted")
-                        } else {
-                            try {
-                                imports = imports + engine.importDataset(dataset)
-                            } catch (t: Throwable) {
-                                failures = failures + (entry.fileName + ": object restore failed: " + (t.message ?: t.toString()))
-                            }
-                        }
-                        next(index + 1)
-                    },
-                    onFailure = {
-                        failures = failures + (entry.fileName + ": object cache load failed: " + (it.message ?: it.toString()))
-                        next(index + 1)
-                    }
-                )
-            }
-        }
-        next(0)
     }
 
     fun restoreCache() {

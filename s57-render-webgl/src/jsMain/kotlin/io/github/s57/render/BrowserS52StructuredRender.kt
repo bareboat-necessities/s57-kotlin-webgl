@@ -75,7 +75,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 // callbacks must never break the browser event loop.
             }
         }
-        val activeRenderer = renderer ?: throw IllegalStateException("S-52 renderer was not initialized")
+        val activeRenderer = renderer
         val stats = activeRenderer.render(portrayed.commands, portrayed.settings, viewport)
         val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +
