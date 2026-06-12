@@ -15,8 +15,8 @@ class BrowserS57WebGlRenderer(
     fun renderPlaceholder(canvasId: String): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found")
-        val gl = ((canvas.getContext("webgl2") ?: canvas.getContext("webgl")) as? WebGLRenderingContext)
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available")
+        val gl = (canvas.getContext("webgl2") as? WebGLRenderingContext)
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available")
 
         gl.viewport(0, 0, canvas.width, canvas.height)
         gl.clearColor(0.06f, 0.10f, 0.16f, 1.0f)
@@ -27,8 +27,8 @@ class BrowserS57WebGlRenderer(
     fun renderStatic(canvasId: String, request: ChartRenderRequest): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", request.camera)
-        val gl = ((canvas.getContext("webgl2") ?: canvas.getContext("webgl")) as? WebGLRenderingContext)
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", request.camera)
+        val gl = (canvas.getContext("webgl2") as? WebGLRenderingContext)
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available", request.camera)
 
         gl.viewport(0, 0, canvas.width, canvas.height)
         val depthTint = if (request.depthMesh.enabled) 0.20f else 0.16f
@@ -62,8 +62,8 @@ class BrowserS57WebGlRenderer(
     fun renderFrame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
-        val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available; Canvas2D fallback is disabled", frame.request.camera)
+        val rawGl = canvas.getContext("webgl2")
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available", frame.request.camera)
         val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)
@@ -86,8 +86,8 @@ class BrowserS57WebGlRenderer(
     ): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
-        val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
-            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available; Canvas2D overlay fallback is disabled", frame.request.camera)
+        val rawGl = canvas.getContext("webgl2")
+            ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available", frame.request.camera)
         val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)

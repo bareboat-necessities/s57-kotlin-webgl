@@ -29,9 +29,6 @@ private class CachedWebGlS52Renderer(
     var commands: List<S52DrawCommand> = emptyList()
     var settings: MarinerSettings? = null
     var viewport: RenderViewport? = null
-    var labelCommands: List<S52DrawCommand> = emptyList()
-    lateinit var labelRenderer: BrowserS52WebGlVectorLabelOverlay
-
     private var renderInProgress: Boolean = false
     private var pendingResourceRender: Boolean = false
     private var resourceRenderScheduled: Boolean = false
@@ -62,20 +59,7 @@ private class CachedWebGlS52Renderer(
     private fun renderWebGlOnly(
         activeSettings: MarinerSettings,
         activeViewport: RenderViewport
-    ): RenderStats {
-        val s52Stats = renderer.render(commands, activeSettings, activeViewport)
-        if (!::labelRenderer.isInitialized || labelCommands.isEmpty()) return s52Stats
-        val labelStats = labelRenderer.render(
-            commands = labelCommands,
-            settings = activeSettings,
-            viewport = activeViewport
-        )
-        return s52Stats.copy(
-            textCount = labelStats.textCount,
-            soundingCount = labelStats.soundingCount,
-            drawCalls = s52Stats.drawCalls + labelStats.drawCalls
-        )
-    }
+    ): RenderStats = renderer.render(commands, activeSettings, activeViewport)
 
     private fun scheduleResourceRenderIfNeeded() {
         if (!pendingResourceRender || resourceRenderScheduled) return
@@ -182,8 +166,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
     window.asDynamic().s57S52DisplayCommandCount = displayPlan.commands.size
     window.asDynamic().s57S52SuppressedRasterAreaPatternCount = displayPlan.suppressedRasterAreaPatternCount
-    window.asDynamic().s57S52SuppressedTextCount = displayPlan.suppressedTextCount
-    window.asDynamic().s57S52SuppressedSoundingCount = displayPlan.suppressedSoundingCount
+    window.asDynamic().s57S52SuppressedDuplicatePointSymbolCount = displayPlan.suppressedDuplicatePointSymbolCount
     window.asDynamic().s57S52InitialDrawCalls = 0
     window.asDynamic().s57S52LastResourceDrawCalls = 0
     window.asDynamic().s57S52SuppressedReentrantResourceCallbacks = 0
@@ -202,11 +185,9 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
                     entry.renderReadyResources()
                 }
-                entry.labelRenderer = BrowserS52WebGlVectorLabelOverlay(canvas, bridge.presLib)
             }
         }
         cachedRenderer.commands = displayPlan.commands
-        cachedRenderer.labelCommands = displayPlan.labelCommands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
         val stats = cachedRenderer.renderCurrentFrame()
@@ -220,11 +201,9 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
             " webGlCommands=" + displayPlan.commands.size +
-            " vectorLabelCommands=" + displayPlan.labelCommands.size +
             " rasterCommands=" + portrayed.rasterCommandCount +
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
-            " suppressedText=" + displayPlan.suppressedTextCount +
-            " suppressedSoundings=" + displayPlan.suppressedSoundingCount +
+            " suppressedDuplicatePointSymbols=" + displayPlan.suppressedDuplicatePointSymbolCount +
             " reentrantResourceCallbacks=" + ((window.asDynamic().s57S52SuppressedReentrantResourceCallbacks as? Number)?.toInt() ?: 0) +
             " drawCalls=" + stats.drawCalls +
             " symbols=" + stats.symbolCount +
