@@ -685,10 +685,13 @@ fun main() {
         )
     }
 
-    window.asDynamic().s57Phase26RenderSnapshot = {
-        renderActive("Phase 26 CI snapshot", boundsFraction = 0.35)
-        null
-    }
+    js("""
+        window.s57Phase26RenderSnapshot = function() {
+            var button = document.querySelector('#renderButton');
+            if (button) button.click();
+            return null;
+        };
+    """)
 
     fun selectedInputFiles(): List<File> {
         val files = fileInput.files ?: return emptyList()
@@ -749,7 +752,8 @@ fun main() {
     }
 
     renderButton.onclick = {
-        renderActive("active cell")
+        if (phase26SnapshotMode()) renderActive("Phase 26 CI snapshot", boundsFraction = 0.35)
+        else renderActive("active cell")
         null
     }
 

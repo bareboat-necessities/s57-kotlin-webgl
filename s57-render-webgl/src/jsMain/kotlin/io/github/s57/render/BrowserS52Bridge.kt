@@ -554,6 +554,7 @@ private fun String.isKnownS57AttributeMissingFromBundledS52Catalog(): Boolean = 
     "CATSLO",
     "CATSPM",
     "NATSUR",
+    "NATQUA",
     "TRAFIC"
 )
 

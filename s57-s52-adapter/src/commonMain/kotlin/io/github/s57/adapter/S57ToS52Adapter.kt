@@ -285,6 +285,7 @@ private val ATTRIBUTE_VALUE_KINDS: Map<String, S57AttributeValueKind> = mapOf(
     "COMCHA" to S57AttributeValueKind.EnumerationList,
     "FUNCTN" to S57AttributeValueKind.EnumerationList,
     "NATCON" to S57AttributeValueKind.EnumerationList,
+    "NATQUA" to S57AttributeValueKind.EnumerationList,
     "PRODCT" to S57AttributeValueKind.EnumerationList,
     "QUASOU" to S57AttributeValueKind.EnumerationList,
     "RESTRN" to S57AttributeValueKind.EnumerationList,

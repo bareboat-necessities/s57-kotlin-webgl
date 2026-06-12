@@ -39,16 +39,27 @@ bash .github/scripts/download-first-enc-cell.sh
 (
   cd tools/ci-render-snapshot
   npm install
-  npx playwright install --with-deps chromium
+  # Use the regular Chromium build, not chromium-headless-shell.  The S-52
+  # renderer needs WebGL2; Playwright's old headless shell often exposes no
+  # usable WebGL2 on GitHub runners even when S-52 portrayal itself succeeds.
+  npx playwright install --with-deps --no-shell chromium
+  npx playwright install --list || true
   if ! command -v xvfb-run >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update
     sudo apt-get install -y xvfb
   fi
   if command -v xvfb-run >/dev/null 2>&1; then
-    PHASE26_HEADLESS=false xvfb-run -a -s "-screen 0 1280x720x24" npm run snapshot -- --app-dir="$ROOT_DIR/$APP_DIR" --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" --out-dir="$ROOT_DIR/build/ci-enc-snapshot" --headless=false
+    PHASE26_HEADLESS=false PHASE26_BROWSER_CHANNEL=chromium \
+      xvfb-run -a -s "-screen 0 1280x720x24" \
+      npm run snapshot -- \
+        --app-dir="$ROOT_DIR/$APP_DIR" \
+        --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" \
+        --out-dir="$ROOT_DIR/build/ci-enc-snapshot" \
+        --headless=false \
+        --browser-channel=chromium
   else
-    echo "xvfb-run is not available; running headless snapshot. The snapshot will fail instead of publishing a blank render.png if WebGL2 is unavailable." >&2
-    npm run snapshot -- --app-dir="$ROOT_DIR/$APP_DIR" --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" --out-dir="$ROOT_DIR/build/ci-enc-snapshot"
+    echo "xvfb-run is not available; running Chromium new-headless snapshot. The snapshot will fail instead of publishing a blank render.png if WebGL2 is unavailable." >&2
+    PHASE26_BROWSER_CHANNEL=chromium npm run snapshot -- --app-dir="$ROOT_DIR/$APP_DIR" --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" --out-dir="$ROOT_DIR/build/ci-enc-snapshot" --browser-channel=chromium
   fi
 )
 

@@ -21,6 +21,7 @@ const thresholdsFile = path.resolve(rootDir, arg('thresholds', 'config/phase26-s
 const width = Number(arg('width', '1280'));
 const height = Number(arg('height', '720'));
 const headless = arg('headless', process.env.PHASE26_HEADLESS ?? 'true') !== 'false';
+const browserChannel = arg('browser-channel', process.env.PHASE26_BROWSER_CHANNEL ?? 'chromium');
 
 if (!existsSync(appDir)) throw new Error(`Demo app directory does not exist: ${appDir}`);
 if (!existsSync(encFile) || statSync(encFile).size <= 0) throw new Error(`ENC file is missing or empty: ${encFile}`);
@@ -230,7 +231,7 @@ async function chartCanvasWebGl2Available(page) {
 const { server, url } = await startServer(appDir);
 let browser;
 try {
-  browser = await chromium.launch({
+  const launchOptions = {
     headless,
     args: [
       '--enable-webgl',
@@ -241,7 +242,12 @@ try {
       '--use-angle=swiftshader',
       '--use-gl=angle'
     ]
-  });
+  };
+  if (browserChannel && browserChannel !== 'default') {
+    launchOptions.channel = browserChannel;
+  }
+  console.log(`Phase 26 launching Chromium headless=${headless} channel=${browserChannel || 'default'}`);
+  browser = await chromium.launch(launchOptions);
   const page = await browser.newPage({ viewport: { width, height } });
   page.on('console', (message) => console.log(`[browser:${message.type()}] ${message.text()}`));
   page.on('pageerror', (error) => console.error(`[browser:error] ${error.message}`));
@@ -254,8 +260,10 @@ try {
   }, null, { timeout: 90000 });
   if (!(await page.evaluate(() => Boolean(window.s57Phase26RenderReady)))) {
     await page.evaluate(() => {
-      if (typeof window.s57Phase26RenderSnapshot === 'function') window.s57Phase26RenderSnapshot();
-      else document.querySelector('#renderButton')?.click();
+      // Trigger a real DOM click instead of calling a Kotlin function object
+      // from JavaScript.  The DOM event path avoids Kotlin/JS dynamic bridge
+      // failures such as "P.asDynamic is not a function".
+      document.querySelector('#renderButton')?.click();
     });
   }
   try {
@@ -278,8 +286,8 @@ try {
     writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
     throw new Error(
       `Phase 26 S-52 portrayal produced ${reportCounter(report, 's52Commands')} commands, ` +
-      'but the browser did not expose a usable WebGL2 renderer. Refusing to publish a blank blue render.png. ' +
-      'Run the snapshot under Xvfb/headed Chromium or install a Chromium build with SwiftShader WebGL2.'
+      `but the browser did not expose a usable WebGL2 renderer (channel=${browserChannel || 'default'}, headless=${headless}). ` +
+      'Refusing to publish a blank blue render.png. Install regular Chromium with `npx playwright install --with-deps --no-shell chromium` and run with `--browser-channel=chromium` under Xvfb.'
     );
   }
 
