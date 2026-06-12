@@ -23,11 +23,14 @@ const height = Number(arg('height', '720'));
 const headless = arg('headless', process.env.PHASE26_HEADLESS ?? 'true') !== 'false';
 const browserChannel = arg('browser-channel', process.env.PHASE26_BROWSER_CHANNEL ?? 'chromium');
 const requestedGlMode = arg('gl-mode', process.env.PHASE26_GL_MODE ?? 'auto');
+const snapshotSpecs = parseSnapshotSpecs(arg('snapshot-fractions', process.env.PHASE26_SNAPSHOT_FRACTIONS ?? 'overview=0.75,comparison=0.45,detail=0.25'));
+
 
 if (!existsSync(appDir)) throw new Error(`Demo app directory does not exist: ${appDir}`);
 if (!existsSync(encFile) || statSync(encFile).size <= 0) throw new Error(`ENC file is missing or empty: ${encFile}`);
 mkdirSync(outDir, { recursive: true });
 rmSync(path.join(outDir, 'render.png'), { force: true });
+for (const snapshot of snapshotSpecs) rmSync(path.join(outDir, snapshot.fileName), { force: true });
 
 const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
@@ -63,6 +66,28 @@ function startServer(directory) {
 
 function readOptional(file) {
   return existsSync(file) ? readFileSync(file, 'utf8').trim() : '';
+}
+
+function safeSnapshotName(value, fallback) {
+  const cleaned = String(value || fallback).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return cleaned || fallback;
+}
+
+function parseSnapshotSpecs(value) {
+  const parts = String(value || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const specs = parts.map((part, index) => {
+    const [rawName, rawFraction] = part.includes('=') ? part.split('=', 2) : [`zoom-${index + 1}`, part];
+    const fraction = Number(rawFraction);
+    if (!Number.isFinite(fraction) || fraction <= 0 || fraction > 1) {
+      throw new Error(`Invalid snapshot fraction '${part}'. Use entries like overview=0.75,detail=0.25.`);
+    }
+    const name = safeSnapshotName(rawName, `zoom-${index + 1}`);
+    return { name, label: name, fraction, fileName: `render-${name}.png` };
+  });
+  return specs.length > 0 ? specs : [{ name: 'comparison', label: 'comparison', fraction: 0.45, fileName: 'render-comparison.png' }];
 }
 
 function reportCounter(report, name) {
@@ -305,6 +330,76 @@ async function launchBrowserWithWebGl2Probe() {
   );
 }
 
+
+async function renderSnapshotAtFraction(page, fraction, label) {
+  await page.evaluate(({ fraction, label }) => {
+    if (typeof window.s57Phase26RenderSnapshotWithBoundsFraction === 'function') {
+      window.s57Phase26RenderSnapshotWithBoundsFraction(fraction, label);
+    } else {
+      window.s57Phase26SnapshotBoundsFraction = fraction;
+      window.s57Phase26SnapshotLabel = label;
+      document.querySelector('#renderButton')?.click();
+    }
+  }, { fraction, label });
+  await page.waitForFunction((expectedLabel) => {
+    if (typeof window.s57Phase26LatestReportJson !== 'string') return false;
+    try {
+      const report = JSON.parse(window.s57Phase26LatestReportJson || '{}');
+      return String(report?.metadata?.label || '').includes(expectedLabel);
+    } catch (_) {
+      return false;
+    }
+  }, label, { timeout: 90000 });
+  await page.waitForTimeout(250);
+  return await readPhase26Report(page);
+}
+
+async function captureValidatedCanvasSnapshot(page, report, renderPath, selectedGlMode) {
+  const hasS52Commands = reportCounter(report, 's52Commands') > 0;
+  if (!hasS52Commands) {
+    throw new Error('Phase 26 did not produce any S-52 commands; refusing to write a blank render PNG');
+  }
+
+  const webGl2Available = await chartCanvasWebGl2Available(page);
+  const webGl2EnvironmentFailure = hasWebGl2EnvironmentDiagnostic(report) || !webGl2Available;
+  if (webGl2EnvironmentFailure) {
+    throw new Error(
+      `Phase 26 S-52 portrayal produced ${reportCounter(report, 's52Commands')} commands, ` +
+      `but the chart canvas lost WebGL2 after the preflight succeeded (channel=${browserChannel || 'default'}, headless=${headless}, glMode=${selectedGlMode}). ` +
+      'Refusing to publish a blank blue render PNG. This usually means some earlier code claimed the canvas with WebGL1/2D before S-52 WebGL2 rendering.'
+    );
+  }
+
+  let drawCalls = reportCounter(report, 's52DrawCalls');
+  if (drawCalls <= 0) {
+    await page.waitForTimeout(500);
+    report = await readPhase26Report(page);
+    drawCalls = reportCounter(report, 's52DrawCalls');
+  }
+  if (drawCalls <= 0) {
+    throw new Error(`Phase 26 S-52 produced ${reportCounter(report, 's52Commands')} commands but zero draw calls; refusing to write a blank render PNG`);
+  }
+
+  const failures = thresholdFailures(report);
+  if (failures.length > 0) {
+    throw new Error(`Phase 26 hard render thresholds failed: ${failures.join('; ')}`);
+  }
+
+  const canvas = page.locator('#chartCanvas');
+  await canvas.screenshot({ path: renderPath });
+  if (!existsSync(renderPath) || statSync(renderPath).size <= 0) {
+    throw new Error(`Canvas PNG snapshot is empty: ${renderPath}`);
+  }
+  const visualStats = pngVisualStats(renderPath);
+  if (visualStats.distinctColors <= 2 || visualStats.dominantRatio >= 0.995) {
+    rmSync(renderPath, { force: true });
+    throw new Error(
+      `Phase 26 ${path.basename(renderPath)} appears blank: distinctColors=${visualStats.distinctColors} ` +
+      `dominantRatio=${visualStats.dominantRatio.toFixed(6)}. Refusing to publish a blue-water-only snapshot.`
+    );
+  }
+  return { report, webGl2Available, visualStats };
+}
 const { server, url } = await startServer(appDir);
 let browser;
 try {
@@ -336,60 +431,36 @@ try {
     const cellText = await page.locator('#cellSummary').textContent().catch(() => 'cell summary unavailable');
     throw new Error(`Timed out waiting for Phase 26 render readiness. status=${statusText} cellSummary=${cellText}`);
   }
+  const snapshotResults = [];
   let report = await readPhase26Report(page);
-  const hasS52Commands = reportCounter(report, 's52Commands') > 0;
-  if (!hasS52Commands) {
-    writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
-    throw new Error('Phase 26 did not produce any S-52 commands; refusing to write a blank render.png');
+  writeFileSync(path.join(outDir, 'diagnostics-initial.json'), `${JSON.stringify(report, null, 2)}
+`);
+
+  for (const snapshot of snapshotSpecs) {
+    report = await renderSnapshotAtFraction(page, snapshot.fraction, snapshot.label);
+    const renderPath = path.join(outDir, snapshot.fileName);
+    try {
+      const captured = await captureValidatedCanvasSnapshot(page, report, renderPath, selectedGlMode);
+      report = captured.report;
+      writeFileSync(path.join(outDir, `diagnostics-${snapshot.name}.json`), `${JSON.stringify(report, null, 2)}
+`);
+      snapshotResults.push({ ...snapshot, ...captured });
+    } catch (error) {
+      writeFileSync(path.join(outDir, `diagnostics-${snapshot.name}.json`), `${JSON.stringify(report, null, 2)}
+`);
+      throw error;
+    }
   }
 
-  const webGl2Available = await chartCanvasWebGl2Available(page);
-  const webGl2EnvironmentFailure = hasWebGl2EnvironmentDiagnostic(report) || !webGl2Available;
-  if (webGl2EnvironmentFailure) {
-    writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
-    throw new Error(
-      `Phase 26 S-52 portrayal produced ${reportCounter(report, 's52Commands')} commands, ` +
-      `but the chart canvas lost WebGL2 after the preflight succeeded (channel=${browserChannel || 'default'}, headless=${headless}, glMode=${selectedGlMode}). ` +
-      'Refusing to publish a blank blue render.png. This usually means some earlier code claimed the canvas with WebGL1/2D before S-52 WebGL2 rendering.'
-    );
-  }
-
-  let drawCalls = reportCounter(report, 's52DrawCalls');
-  if (drawCalls <= 0) {
-    await page.waitForTimeout(500);
-    report = await readPhase26Report(page);
-    drawCalls = reportCounter(report, 's52DrawCalls');
-  }
-  if (drawCalls <= 0) {
-    writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
-    throw new Error(`Phase 26 S-52 produced ${reportCounter(report, 's52Commands')} commands but zero draw calls; refusing to write a blank render.png`);
-  }
-
-  await page.waitForTimeout(250);
-
-
-  const failures = thresholdFailures(report);
-  if (failures.length > 0) {
-    writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
-    throw new Error(`Phase 26 hard render thresholds failed: ${failures.join('; ')}`);
-  }
-
-  const canvas = page.locator('#chartCanvas');
-  const renderPath = path.join(outDir, 'render.png');
-  await canvas.screenshot({ path: renderPath });
-  if (!existsSync(renderPath) || statSync(renderPath).size <= 0) {
-    throw new Error('Canvas PNG snapshot is empty');
-  }
-  const visualStats = pngVisualStats(renderPath);
-  if (visualStats.distinctColors <= 2 || visualStats.dominantRatio >= 0.995) {
-    rmSync(renderPath, { force: true });
-    writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
-    throw new Error(
-      `Phase 26 render.png appears blank: distinctColors=${visualStats.distinctColors} ` +
-      `dominantRatio=${visualStats.dominantRatio.toFixed(6)}. Refusing to publish a blue-water-only snapshot.`
-    );
-  }
-  writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (snapshotResults.length <= 0) throw new Error('No Phase 26 snapshots were captured');
+  const compatibilitySnapshot = snapshotResults[Math.floor(snapshotResults.length / 2)] ?? snapshotResults[0];
+  writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(compatibilitySnapshot.report, null, 2)}
+`);
+  report = compatibilitySnapshot.report;
+  const compatibilityPng = readFileSync(path.join(outDir, compatibilitySnapshot.fileName));
+  writeFileSync(path.join(outDir, 'render.png'), compatibilityPng);
+  const visualStats = compatibilitySnapshot.visualStats;
+  const webGl2Available = compatibilitySnapshot.webGl2Available;
   const selectedUrl = readOptional(path.resolve(rootDir, 'build/ci-enc-snapshot/input/selected-url.txt'));
   const extractedEncFile = readOptional(path.resolve(rootDir, 'build/ci-enc-snapshot/input/extracted-enc-path.txt'));
   const warnings = thresholdWarnings(report);
@@ -403,6 +474,8 @@ try {
     `scaleDenominator=${report.scaleDenominator ?? 'unknown'}`,
     `imageWidth=${width}`,
     `imageHeight=${height}`,
+    `snapshotCount=${snapshotResults.length}`,
+    ...snapshotResults.map((snapshot) => `snapshot=${snapshot.fileName} boundsFraction=${snapshot.fraction} distinctColors=${snapshot.visualStats.distinctColors} dominantRatio=${snapshot.visualStats.dominantRatio.toFixed(6)}`),
     `diagnostics=${report.diagnostics.length}`,
     `warnings=${report.countsBySeverity?.warning ?? 0}`,
     `errors=${report.countsBySeverity?.error ?? 0}`,
