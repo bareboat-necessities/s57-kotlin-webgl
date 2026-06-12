@@ -10,6 +10,16 @@ import io.github.s57.core.S57Value
 import kotlinx.browser.window
 import org.khronos.webgl.Int8Array
 
+
+@Suppress("NOTHING_TO_INLINE")
+private inline fun jsDynamic(value: Any?): dynamic = js("value")
+
+@Suppress("NOTHING_TO_INLINE")
+private inline fun jsIndex(value: Any?, index: Int): dynamic = js("value[index]")
+
+@Suppress("NOTHING_TO_INLINE")
+private inline fun jsProp(value: Any?, key: String): dynamic = js("value == null ? null : value[key]")
+
 /** IndexedDB persistence for decoded browser ENC chart objects. */
 class BrowserChartIndexedDbCache(
     private val databaseName: String = "s57-kotlin-webgl-cache",
@@ -23,7 +33,7 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.asDynamic().transaction(storeName, "readonly")
+                        val tx = jsDynamic(db).transaction(storeName, "readonly")
                         val store = tx.objectStore(storeName)
                         val request = store.getAll()
                         request.onsuccess = {
@@ -31,7 +41,7 @@ class BrowserChartIndexedDbCache(
                             val entries = mutableListOf<BrowserChartCacheEntry>()
                             val length = (rows.length as Number).toInt()
                             for (index in 0 until length) {
-                                val entry = toCacheEntryOrNull(rows.asDynamic()[index])
+                                val entry = toCacheEntryOrNull(jsIndex(rows, index))
                                 if (entry != null) entries.add(entry)
                             }
                             callback(Result.success(entries))
@@ -82,7 +92,7 @@ class BrowserChartIndexedDbCache(
                         row.payloads = payloads.map { it.toInt8Array() }.toTypedArray()
                         row.payload = payloads.firstOrNull()?.toInt8Array()
 
-                        val tx = db.asDynamic().transaction(storeName, "readwrite")
+                        val tx = jsDynamic(db).transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
                         val request = store.put(row)
                         request.onsuccess = {
@@ -107,7 +117,7 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.asDynamic().transaction(storeName, "readonly")
+                        val tx = jsDynamic(db).transaction(storeName, "readonly")
                         val store = tx.objectStore(storeName)
                         val request = store.get(cacheKey)
                         request.onsuccess = {
@@ -139,12 +149,12 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.asDynamic().transaction(storeName, "readonly")
+                        val tx = jsDynamic(db).transaction(storeName, "readonly")
                         val store = tx.objectStore(storeName)
                         val request = store.get(cacheKey)
                         request.onsuccess = {
                             val row = request.result
-                            val datasetRow: Any? = if (row == null) null else row.asDynamic().dataset
+                            val datasetRow: Any? = if (row == null) null else jsProp(row, "dataset")
                             callback(Result.success(toS57DatasetOrNull(datasetRow)))
                             null
                         }
@@ -166,7 +176,7 @@ class BrowserChartIndexedDbCache(
             opened.fold(
                 onSuccess = { db ->
                     try {
-                        val tx = db.asDynamic().transaction(storeName, "readwrite")
+                        val tx = jsDynamic(db).transaction(storeName, "readwrite")
                         val store = tx.objectStore(storeName)
                         val request = store.clear()
                         request.onsuccess = {
@@ -192,7 +202,7 @@ class BrowserChartIndexedDbCache(
             callback(Result.success(alreadyOpen as Any))
             return
         }
-        val indexedDb = window.asDynamic().indexedDB
+        val indexedDb = jsDynamic(window).indexedDB
         if (indexedDb == null) {
             callback(Result.failure(IllegalStateException("IndexedDB is not available in this browser")))
             return
@@ -249,7 +259,7 @@ private fun toCacheEntryOrNull(value: Any?): BrowserChartCacheEntry? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         BrowserChartCacheEntry(
             cacheKey = row.cacheKey as String,
             fileName = row.fileName as String,
@@ -267,7 +277,7 @@ private fun toPayloadList(value: Any?): List<ByteArray> = try {
     if (value == null) {
         emptyList()
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         val payloads = row.payloads
         if (payloads != null) {
             val length = (payloads.length as Number).toInt()
@@ -385,7 +395,7 @@ private fun toS57DatasetOrNull(value: Any?): S57Dataset? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         val summary = toS57CellSummaryOrNull(row.summary)
         if (summary == null) {
             null
@@ -409,7 +419,7 @@ private fun toS57CellSummaryOrNull(value: Any?): S57CellSummary? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         val cellId = row.cellId as? String
         if (cellId == null) {
             null
@@ -432,7 +442,7 @@ private fun toGeoBoundsOrNull(value: Any?): GeoBounds? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         GeoBounds(
             minLon = (row.minLon as Number).toDouble(),
             minLat = (row.minLat as Number).toDouble(),
@@ -448,7 +458,7 @@ private fun toS57FeatureOrNull(value: Any?): S57Feature? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         val attrs = linkedMapOf<String, S57Value>()
         val attrRows = row.attributes
         if (attrRows != null) {
@@ -480,7 +490,7 @@ private fun toS57ValueOrNull(value: Any?): S57Value? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         when (row.type as? String) {
             "text" -> S57Value.Text(row.value as? String ?: "")
             "integer" -> S57Value.Integer((row.value as Number).toInt())
@@ -502,7 +512,7 @@ private fun toS57GeometryOrNull(value: Any?): S57Geometry? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         when (row.type as? String) {
             "empty" -> S57Geometry.Empty
             "point" -> toGeoPointOrNull(row.coordinate)?.let { coordinate -> S57Geometry.Point(coordinate) }
@@ -525,7 +535,7 @@ private fun toGeoPointOrNull(value: Any?): GeoPoint? = try {
     if (value == null) {
         null
     } else {
-        val row = value.asDynamic()
+        val row = jsDynamic(value)
         GeoPoint((row.lon as Number).toDouble(), (row.lat as Number).toDouble())
     }
 } catch (_: Throwable) {
@@ -536,7 +546,7 @@ private fun toGeoPointList(value: Any?): List<GeoPoint> = try {
     if (value == null) {
         emptyList()
     } else {
-        val rows = value.asDynamic()
+        val rows = jsDynamic(value)
         val length = (rows.length as Number).toInt()
         (0 until length).mapNotNull { index -> toGeoPointOrNull(rows[index]) }
     }
@@ -548,7 +558,7 @@ private fun toGeoPointRings(value: Any?): List<List<GeoPoint>> = try {
     if (value == null) {
         emptyList()
     } else {
-        val rows = value.asDynamic()
+        val rows = jsDynamic(value)
         val length = (rows.length as Number).toInt()
         (0 until length).map { index -> toGeoPointList(rows[index]) }
     }

@@ -187,7 +187,14 @@ internal class BrowserS52WebGlTextPostpass(
         gl.texParameteri(WebGLRenderingContext.TEXTURE_2D, WebGLRenderingContext.TEXTURE_MAG_FILTER, WebGLRenderingContext.LINEAR)
         gl.texParameteri(WebGLRenderingContext.TEXTURE_2D, WebGLRenderingContext.TEXTURE_WRAP_S, WebGLRenderingContext.CLAMP_TO_EDGE)
         gl.texParameteri(WebGLRenderingContext.TEXTURE_2D, WebGLRenderingContext.TEXTURE_WRAP_T, WebGLRenderingContext.CLAMP_TO_EDGE)
-        js("arguments[0].texImage2D(arguments[0].TEXTURE_2D, 0, arguments[0].RGBA, arguments[0].RGBA, arguments[0].UNSIGNED_BYTE, arguments[1])")(gl, atlasCanvas)
+        gl.asDynamic().texImage2D(
+            WebGLRenderingContext.TEXTURE_2D,
+            0,
+            WebGLRenderingContext.RGBA,
+            WebGLRenderingContext.RGBA,
+            WebGLRenderingContext.UNSIGNED_BYTE,
+            atlasCanvas
+        )
         return texture
     }
 
