@@ -7,10 +7,19 @@ import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlin.js.console
+import kotlin.math.roundToInt
 import org.w3c.dom.HTMLCanvasElement
 
 private val sharedS52Bridge: BrowserS52Bridge by lazy { BrowserS52Bridge() }
 private val webGlS52RendererCache = mutableMapOf<String, CachedWebGlS52Renderer>()
+private val s52PortrayalCache = linkedMapOf<S52PortrayalCacheKey, BrowserS52PortrayalResult>()
+private const val MaxS52PortrayalCacheEntries: Int = 24
+
+private data class S52PortrayalCacheKey(
+    val featureIds: List<Long>,
+    val paletteName: String,
+    val scaleBucket: Int
+)
 
 private class CachedWebGlS52Renderer(
     val canvasId: String
@@ -56,12 +65,24 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     }
 
     val bridge = sharedS52Bridge
-    val portrayed = bridge.portray(
+    val portrayalCacheKey = S52PortrayalCacheKey(
+        featureIds = sourceFeatures.map { it.id },
+        paletteName = frame.request.paletteName,
+        scaleBucket = (frame.request.scaleDenominator / 100.0).roundToInt()
+    )
+    val cachedPortrayal = s52PortrayalCache[portrayalCacheKey]
+    val portrayed = cachedPortrayal ?: bridge.portray(
         features = sourceFeatures,
         paletteName = frame.request.paletteName,
         scaleDenominator = frame.request.scaleDenominator
-    )
-    portrayed.diagnostics.logRenderDiagnosticsToConsole()
+    ).also { result ->
+        if (s52PortrayalCache.size >= MaxS52PortrayalCacheEntries) {
+            val oldest = s52PortrayalCache.keys.firstOrNull()
+            if (oldest != null) s52PortrayalCache.remove(oldest)
+        }
+        s52PortrayalCache[portrayalCacheKey] = result
+        result.diagnostics.logRenderDiagnosticsToConsole()
+    }
 
     if (portrayed.commands.isEmpty()) {
         val s52 = portrayed.toSummary(failureStage = "portrayal")

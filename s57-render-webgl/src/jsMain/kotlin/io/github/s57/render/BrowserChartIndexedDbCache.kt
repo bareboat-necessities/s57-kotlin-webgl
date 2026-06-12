@@ -14,8 +14,10 @@ import org.khronos.webgl.Int8Array
 class BrowserChartIndexedDbCache(
     private val databaseName: String = "s57-kotlin-webgl-cache",
     private val storeName: String = "encPayloads",
-    private val version: Int = 1
+    private val version: Int = 2
 ) {
+    private var cachedDb: dynamic = null
+
     fun list(callback: (Result<List<BrowserChartCacheEntry>>) -> Unit) {
         open { opened ->
             opened.fold(
@@ -184,6 +186,11 @@ class BrowserChartIndexedDbCache(
     }
 
     private fun open(callback: (Result<Any>) -> Unit) {
+        val alreadyOpen = cachedDb
+        if (alreadyOpen != null) {
+            callback(Result.success(alreadyOpen as Any))
+            return
+        }
         val indexedDb = window.asDynamic().indexedDB
         if (indexedDb == null) {
             callback(Result.failure(IllegalStateException("IndexedDB is not available in this browser")))
@@ -192,19 +199,41 @@ class BrowserChartIndexedDbCache(
         val request = indexedDb.open(databaseName, version)
         request.onupgradeneeded = {
             val db = request.result
-            if (!db.objectStoreNames.contains(storeName)) {
+            val store = if (!db.objectStoreNames.contains(storeName)) {
                 db.createObjectStore(storeName, js("({ keyPath: 'cacheKey' })"))
+            } else {
+                request.transaction.objectStore(storeName)
             }
+            ensureIndex(store, "cellId", "cellId")
+            ensureIndex(store, "fileName", "fileName")
             null
         }
         request.onsuccess = {
-            callback(Result.success(request.result as Any))
+            cachedDb = request.result
+            cachedDb.onclose = { cachedDb = null; null }
+            cachedDb.onversionchange = {
+                try { cachedDb.close() } catch (_: Throwable) { }
+                cachedDb = null
+                null
+            }
+            callback(Result.success(cachedDb as Any))
             null
         }
         request.onerror = {
+            cachedDb = null
             callback(Result.failure(IllegalStateException("IndexedDB open failed")))
             null
         }
+        request.onblocked = {
+            cachedDb = null
+            callback(Result.failure(IllegalStateException("IndexedDB open blocked by another tab; close old demo tabs and retry")))
+            null
+        }
+    }
+
+    private fun ensureIndex(store: dynamic, name: String, keyPath: String) {
+        val names = store.indexNames
+        if (!(names.contains(name) as Boolean)) store.createIndex(name, keyPath, js("({ unique: false })"))
     }
 }
 

@@ -23,14 +23,17 @@ interface S57IndexStore {
  * target without requiring IndexedDB.
  */
 class InMemoryS57IndexStore(
-    private val spatialIndex: S57SpatialBinIndex = S57SpatialBinIndex()
+    private val spatialIndex: S57SpatialBinIndex = S57SpatialBinIndex(),
+    private val maxCachedBinQueries: Int = 96
 ) : S57IndexStore {
     private val cells = linkedMapOf<String, S57CellSummary>()
     private val featuresByCell = linkedMapOf<String, LinkedHashMap<Long, StoredS57Feature>>()
     private val binsByCell = linkedMapOf<String, Map<SpatialBinId, Set<Long>>>()
+    private val candidateCache = linkedMapOf<SpatialCandidateKey, List<StoredS57Feature>>()
 
     override fun putCell(summary: S57CellSummary) {
         cells[summary.cellId] = summary
+        invalidateCellCache(summary.cellId)
     }
 
     override fun putFeatures(cellId: String, features: List<S57Feature>) {
@@ -38,6 +41,7 @@ class InMemoryS57IndexStore(
         val bucket = featuresByCell.getOrPut(cellId) { linkedMapOf() }
         for (feature in stored) bucket[feature.featureId] = feature
         rebuildBins(cellId)
+        invalidateCellCache(cellId)
     }
 
     override fun importDataset(dataset: S57Dataset): S57IndexImportReport {
@@ -45,6 +49,7 @@ class InMemoryS57IndexStore(
         val stored = dataset.toStoredFeatures()
         featuresByCell[dataset.summary.cellId] = stored.associateByTo(linkedMapOf()) { it.featureId }
         rebuildBins(dataset.summary.cellId)
+        invalidateCellCache(dataset.summary.cellId)
         val bins = binsByCell[dataset.summary.cellId].orEmpty()
         return S57IndexImportReport(
             cellId = dataset.summary.cellId,
@@ -65,10 +70,13 @@ class InMemoryS57IndexStore(
     override fun queryFeatures(query: S57FeatureQuery): List<S57Feature> {
         val byId = featuresByCell[query.cellId].orEmpty()
         if (byId.isEmpty()) return emptyList()
-        val candidateIds = spatialIndex.binsForBounds(query.cellId, query.bounds)
-            .flatMap { bin -> binsByCell[query.cellId].orEmpty()[bin].orEmpty() }
-            .toSet()
-        val candidates = if (candidateIds.isEmpty()) byId.values else candidateIds.mapNotNull { byId[it] }
+        val cellBins = binsByCell[query.cellId].orEmpty()
+        if (cellBins.isEmpty()) return emptyList()
+
+        val queryBins = spatialIndex.binsForBounds(query.cellId, query.bounds)
+        val candidates = cachedCandidatesForBins(query.cellId, queryBins, cellBins, byId)
+        if (candidates.isEmpty()) return emptyList()
+
         return candidates.asSequence()
             .filter { feature -> feature.bounds?.intersects(query.bounds) == true }
             .filter { feature -> query.objectClasses.isEmpty() || feature.objectClass in query.objectClasses }
@@ -87,9 +95,42 @@ class InMemoryS57IndexStore(
         cells.clear()
         featuresByCell.clear()
         binsByCell.clear()
+        candidateCache.clear()
     }
 
     private fun rebuildBins(cellId: String) {
         binsByCell[cellId] = spatialIndex.indexFeatures(cellId, featuresByCell[cellId].orEmpty().values.toList())
     }
+
+    private fun cachedCandidatesForBins(
+        cellId: String,
+        queryBins: Set<SpatialBinId>,
+        cellBins: Map<SpatialBinId, Set<Long>>,
+        byId: Map<Long, StoredS57Feature>
+    ): List<StoredS57Feature> {
+        if (queryBins.isEmpty()) return emptyList()
+        val key = SpatialCandidateKey(cellId, queryBins.map { it.toString() }.sorted())
+        candidateCache[key]?.let { return it }
+
+        val candidateIds = queryBins.asSequence()
+            .flatMap { bin -> cellBins[bin].orEmpty().asSequence() }
+            .distinct()
+            .toList()
+        val candidates = candidateIds.mapNotNull { byId[it] }
+        if (candidateCache.size >= maxCachedBinQueries) {
+            val oldest = candidateCache.keys.firstOrNull()
+            if (oldest != null) candidateCache.remove(oldest)
+        }
+        candidateCache[key] = candidates
+        return candidates
+    }
+
+    private fun invalidateCellCache(cellId: String) {
+        candidateCache.keys.filter { it.cellId == cellId }.forEach { candidateCache.remove(it) }
+    }
+
+    private data class SpatialCandidateKey(
+        val cellId: String,
+        val binIds: List<String>
+    )
 }

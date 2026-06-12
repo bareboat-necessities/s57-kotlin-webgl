@@ -22,6 +22,7 @@ import io.github.s57.render.ScreenSize
 import io.github.s57.render.S57ChartCanvas
 import io.github.s57.render.S57WebGlEngine
 import io.github.s57.render.boundedScale
+import io.github.s57.render.browserChartCacheKey
 import io.github.s57.render.browserChartCacheSummary
 import io.github.s57.render.chartRenderRequestForCell
 import io.github.s57.render.chartViewportFitForBounds
@@ -565,17 +566,8 @@ fun main() {
             finishImport()
             return
         }
-        fun next(index: Int) {
-            if (index >= importable.size) {
-                finishImport()
-                return
-            }
-            val group = importable[index]
-            val ordered = group.contiguousImportPayloads
-            val missingUpdate = group.firstMissingUpdateNumber
-            if (missingUpdate != null && missingUpdate <= group.importPayloads.last().updateNumber) {
-                failures = failures + (group.chartId + ": stopped update chain before missing ." + missingUpdate.toString().padStart(3, '0'))
-            }
+
+        fun importDecodedGroup(group: BrowserNoaaChartGroup, ordered: List<BrowserNoaaChartPayload>, index: Int, next: (Int) -> Unit) {
             status?.textContent = "Importing " + group.label + " (" + (index + 1) + "/" + importable.size + ")..."
             try {
                 val imported = engine.importS57ByteSequence(ordered.map { it.bytes })
@@ -594,6 +586,51 @@ fun main() {
                 failures = failures + (group.label + ": " + (t.message ?: t.toString()))
                 next(index + 1)
             }
+        }
+
+        fun importCachedDatasetIfPresent(group: BrowserNoaaChartGroup, ordered: List<BrowserNoaaChartPayload>, index: Int, next: (Int) -> Unit) {
+            val byteCount = ordered.sumOf { it.bytes.size }
+            val cacheKey = browserChartCacheKey(group.label, byteCount)
+            status?.textContent = "Checking decoded IndexedDB cache for " + group.label + " (" + (index + 1) + "/" + importable.size + ")..."
+            chartCache.loadDataset(cacheKey) { loaded ->
+                loaded.fold(
+                    onSuccess = { dataset ->
+                        if (dataset == null) {
+                            importDecodedGroup(group, ordered, index, next)
+                        } else {
+                            try {
+                                val imported = engine.importDataset(dataset)
+                                imports = imports + imported
+                                selectedLabels = selectedLabels + ("cache-hit: " + group.label)
+                                updateFileList(selectedLabels + ("Imported=" + imports.size + " failed=" + failures.size + " cached=" + cachedEntries.size))
+                                updateCellSummary()
+                                next(index + 1)
+                            } catch (t: Throwable) {
+                                failures = failures + (group.label + ": decoded cache import failed, falling back to byte decode: " + (t.message ?: t.toString()))
+                                importDecodedGroup(group, ordered, index, next)
+                            }
+                        }
+                    },
+                    onFailure = {
+                        failures = failures + (group.label + ": decoded cache lookup failed, falling back to byte decode: " + (it.message ?: it.toString()))
+                        importDecodedGroup(group, ordered, index, next)
+                    }
+                )
+            }
+        }
+
+        fun next(index: Int) {
+            if (index >= importable.size) {
+                finishImport()
+                return
+            }
+            val group = importable[index]
+            val ordered = group.contiguousImportPayloads
+            val missingUpdate = group.firstMissingUpdateNumber
+            if (missingUpdate != null && missingUpdate <= group.importPayloads.last().updateNumber) {
+                failures = failures + (group.chartId + ": stopped update chain before missing ." + missingUpdate.toString().padStart(3, '0'))
+            }
+            importCachedDatasetIfPresent(group, ordered, index, ::next)
         }
         next(0)
     }
