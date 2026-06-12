@@ -592,7 +592,18 @@ fun main() {
             val byteCount = ordered.sumOf { it.bytes.size }
             val cacheKey = browserChartCacheKey(group.label, byteCount)
             status?.textContent = "Checking decoded IndexedDB cache for " + group.label + " (" + (index + 1) + "/" + importable.size + ")..."
+            var settled = false
+            val timeoutHandle = window.setTimeout({
+                if (!settled) {
+                    settled = true
+                    failures = failures + (group.label + ": decoded IndexedDB cache lookup timed out, falling back to byte decode")
+                    importDecodedGroup(group, ordered, index, next)
+                }
+            }, 1500)
             chartCache.loadDataset(cacheKey) { loaded ->
+                if (settled) return@loadDataset
+                settled = true
+                window.clearTimeout(timeoutHandle)
                 loaded.fold(
                     onSuccess = { dataset ->
                         if (dataset == null) {

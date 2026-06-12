@@ -50,7 +50,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     canvasId: String,
     frame: StaticChartFrame
 ): RenderedFrameSummary {
-    val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
+    var canvas = document.getElementById(canvasId) as? HTMLCanvasElement
         ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
 
     val sourceFeatures = frame.projectedFeatures.mapNotNull { it.feature }
@@ -108,6 +108,11 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     return try {
         installWebGl2KotlinJsCompatibilityShim()
+        val preparedCanvas = prepareCanvasForS52WebGl2(canvasId, canvas)
+        if (preparedCanvas !== canvas) {
+            canvas = preparedCanvas
+            webGlS52RendererCache.remove(canvasId)
+        }
         val cachedRenderer = webGlS52RendererCache.getOrPut(canvasId) {
             CachedWebGlS52Renderer(canvasId).also { entry ->
                 entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
@@ -176,6 +181,36 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             s52 = s52
         )
     }
+}
+
+
+private fun prepareCanvasForS52WebGl2(canvasId: String, canvas: HTMLCanvasElement): HTMLCanvasElement {
+    if (canvas.hasUsableWebGl2Context()) return canvas
+
+    /*
+     * A canvas can permanently reject webgl2 after earlier demo/debug code has
+     * claimed it with webgl1 or 2D.  The S-52 path must not inherit that poisoned
+     * canvas.  Replace only the DOM element, keeping id/class/size/style, and let
+     * WebGlS52Renderer create a fresh WebGL2 context on the replacement.
+     */
+    val replacement = (canvas.ownerDocument?.createElement("canvas") as? HTMLCanvasElement)
+        ?: return canvas
+    replacement.id = canvas.id.ifBlank { canvasId }
+    replacement.className = canvas.className
+    replacement.width = canvas.width
+    replacement.height = canvas.height
+    val style = canvas.getAttribute("style")
+    if (style != null) replacement.setAttribute("style", style)
+    replacement.setAttribute("data-s57-s52-context-reset", "webgl2")
+    canvas.parentNode?.replaceChild(replacement, canvas)
+    webGlS52RendererCache.remove(canvasId)
+    return replacement
+}
+
+private fun HTMLCanvasElement.hasUsableWebGl2Context(): Boolean = try {
+    getContext("webgl2") != null
+} catch (_: Throwable) {
+    false
 }
 
 /**
