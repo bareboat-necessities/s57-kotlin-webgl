@@ -4,6 +4,7 @@ import io.github.s52.core.draw.S52DrawCommand
 import io.github.s52.core.geometry.Coordinate
 import io.github.s52.core.geometry.EncGeometry
 import io.github.s52.core.settings.MarinerSettings
+import io.github.s52.core.settings.S52Palette
 import io.github.s52.preslib.PresLibPack
 import io.github.s52.render.webgl.RenderViewport
 import kotlin.js.unsafeCast
@@ -82,8 +83,8 @@ internal class BrowserS52WebGlVectorLabelOverlay(
         return BrowserS52VectorLabelStats(textCount = textCount, soundingCount = soundingCount, drawCalls = drawCalls)
     }
 
-    private fun colorFor(palette: String, token: String): FloatArray {
-        val color = presLib.colors.color(palette, token) ?: presLib.colors.color(palette, "CHBLK")
+    private fun colorFor(palette: S52Palette, token: String): FloatArray {
+        val color = presLib.colors.color(token, palette) ?: presLib.colors.color("CHBLK", palette)
         return if (color != null) {
             floatArrayOf(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, 0.92f)
         } else {
