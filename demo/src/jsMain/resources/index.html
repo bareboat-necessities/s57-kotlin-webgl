@@ -70,6 +70,25 @@
       <canvas id="chartCanvas" width="1280" height="720"></canvas>
     </section>
   </div>
+  <script>
+    (function () {
+      if (typeof WebGL2RenderingContext === 'undefined' || typeof WebGLRenderingContext === 'undefined') {
+        window.s57WebGl2KotlinJsShim = 'not-needed-or-unavailable';
+        return;
+      }
+      try {
+        var probe = document.createElement('canvas').getContext('webgl2');
+        if (probe && !(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
+          Object.setPrototypeOf(WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype);
+          window.s57WebGl2KotlinJsShim = 'installed-before-demo-js';
+        } else {
+          window.s57WebGl2KotlinJsShim = probe ? 'native-compatible-before-demo-js' : 'webgl2-unavailable-before-demo-js';
+        }
+      } catch (error) {
+        window.s57WebGl2KotlinJsShim = 'failed-before-demo-js: ' + (error && (error.message || error));
+      }
+    })();
+  </script>
   <script src="demo.js"></script>
   <script>
     (function () {

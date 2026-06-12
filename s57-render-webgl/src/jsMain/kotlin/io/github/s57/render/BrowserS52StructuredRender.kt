@@ -50,30 +50,23 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         north = frame.request.bounds.maxLat
     )
     val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
-
-    // s52-kotlin-webgl 0.5.2 asks for a "webgl2" context but stores it
-    // through the Kotlin WebGLRenderingContext type.  In Chromium,
-    // WebGL2RenderingContext is a separate constructor and is not guaranteed to
-    // satisfy Kotlin/JS' safe cast to WebGLRenderingContext.  Without this
-    // compatibility shim the same browser can pass an external WebGL2 preflight
-    // and still make WebGlS52Renderer throw "WebGL2 is not available".
-    ensureS52WebGl2KotlinCastCompatibility()
-
-    setS52WindowBoolean("s57S52ResourceRenderReady", false)
-    setS52WindowInt("s57S52RasterCommandCount", portrayed.rasterCommandCount)
-    setS52WindowInt("s57S52InitialDrawCalls", 0)
-    setS52WindowInt("s57S52LastResourceDrawCalls", 0)
+    window.asDynamic().s57S52ResourceRenderReady = false
+    window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
+    window.asDynamic().s57S52InitialDrawCalls = 0
+    window.asDynamic().s57S52LastResourceDrawCalls = 0
 
     return try {
+        installWebGl2KotlinJsCompatibilityShim()
         var renderer: WebGlS52Renderer? = null
         renderer = WebGlS52Renderer(canvas, bridge.presLib) {
             val readyRenderer = renderer ?: return@WebGlS52Renderer
             try {
                 val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
-                setS52WindowBoolean("s57S52ResourceRenderReady", true)
-                setS52WindowInt("s57S52LastResourceDrawCalls", readyStats.drawCalls)
-                val previousReadyRenderCount = getS52WindowInt("s57S52ResourceRenderCount")
-                setS52WindowInt("s57S52ResourceRenderCount", previousReadyRenderCount + 1)
+                window.asDynamic().s57S52ResourceRenderReady = true
+                window.asDynamic().s57S52LastResourceDrawCalls = readyStats.drawCalls
+                val previousReadyRenderCount =
+                    (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
+                window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
                 val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
                 if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
                     // Intentionally disabled by policy.  The decoded renderer is a
@@ -87,7 +80,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         }
         val activeRenderer = renderer
         val stats = activeRenderer.render(portrayed.commands, portrayed.settings, viewport)
-        setS52WindowInt("s57S52InitialDrawCalls", stats.drawCalls)
+        window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
         val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +
             " encFeatures=" + portrayed.featureCount +
@@ -139,7 +132,8 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             frame = frame,
             reason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
                 " encFeatures=" + portrayed.featureCount +
-                " commands=" + portrayed.commands.size,
+                " commands=" + portrayed.commands.size +
+                " webgl2Shim=" + webGl2KotlinJsCompatibilityShimStatus(),
             s52 = s52
         )
     }
@@ -189,54 +183,6 @@ private fun clearCanvasForSuppressedS52Fallback(canvas: HTMLCanvasElement) {
     // the chart canvas with WebGL1 or Canvas2D permanently prevents a later
     // S-52 WebGL2 retry from succeeding on the same DOM canvas.
     canvas.setAttribute("data-s52-fallback-suppressed", "true")
-}
-
-
-private fun ensureS52WebGl2KotlinCastCompatibility() {
-    js("""
-        (function() {
-          if (typeof window === 'undefined') return;
-          if (window.__s57S52WebGl2KotlinCastCompatibility === true) return;
-          window.__s57S52WebGl2KotlinCastCompatibility = true;
-          try {
-            if (typeof WebGL2RenderingContext === 'undefined' ||
-                typeof WebGLRenderingContext === 'undefined' ||
-                !WebGL2RenderingContext.prototype ||
-                !WebGLRenderingContext.prototype ||
-                typeof Object.setPrototypeOf !== 'function') {
-              return;
-            }
-            var canvas = document.createElement('canvas');
-            var gl = canvas.getContext('webgl2', {
-              alpha: false,
-              antialias: false,
-              depth: false,
-              stencil: false,
-              failIfMajorPerformanceCaveat: false
-            });
-            if (gl && !(gl instanceof WebGLRenderingContext)) {
-              Object.setPrototypeOf(WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype);
-            }
-          } catch (e) {
-            if (typeof console !== 'undefined' && console.warn) {
-              console.warn('S-52 WebGL2 Kotlin/JS cast compatibility patch was skipped: ' + (e && e.message ? e.message : e));
-            }
-          }
-        })();
-    """)
-}
-
-private fun setS52WindowBoolean(name: String, value: Boolean) {
-    js("window[name] = value;")
-}
-
-private fun setS52WindowInt(name: String, value: Int) {
-    js("window[name] = value;")
-}
-
-private fun getS52WindowInt(name: String): Int {
-    val value = js("Number(window[name] || 0);").unsafeCast<Double>()
-    return value.toInt()
 }
 
 
