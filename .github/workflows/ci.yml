@@ -8,11 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      S52_VERSION: "0.5.3"
-      S52_RELEASE_MAVEN_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.3/s52-kotlin-webgl-release-maven-0.5.3.zip"
-      S52_RELEASE_MAVEN_SHA256: "0baaa43302e1b11326bae73957dddb2099918bb3b326f8cddb8c72c618fd1cc0"
-      S52_RELEASE_SOURCE_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.3/s52-kotlin-webgl-0.5.3-symbology-source.zip"
-      S52_RELEASE_SOURCE_SHA256: "693c5bf26eaceef3bbaa33f84406d7dca738fd831d496d997f7b8edea035b601"
+      S52_VERSION: "0.5.4"
+      S52_RELEASE_MAVEN_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.4/s52-kotlin-webgl-release-maven-0.5.4.zip"
+      S52_RELEASE_MAVEN_SHA256: "5d1b7ff9071c27800fa3d36e77b3da83fdfe22afbab29779aa99171a1856ac5b"
+      S52_RELEASE_SOURCE_ZIP: "https://github.com/bareboat-necessities/s52-kotlin-webgl/releases/download/v0.5.4/s52-kotlin-webgl-0.5.4-symbology-source.zip"
+      S52_RELEASE_SOURCE_SHA256: "064f626364af548d51a00a5897af17ff1d4d0807f83013d81767cd7f6ea71816"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -49,7 +49,7 @@ jobs:
           fi
           echo "S52_SOURCE_DIR=${{ github.workspace }}/$S52_SOURCE_DIR" >> "$GITHUB_ENV"
           echo "Using S52 source composite build at $S52_SOURCE_DIR"
-      - name: Build Phase 25 with S-52 0.5.3 Kotlin symbology
+      - name: Build Phase 25 with S-52 0.5.4 Kotlin symbology
         run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build :demo:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
       - name: Package NOAA Statue of Liberty browser demo
         shell: bash
