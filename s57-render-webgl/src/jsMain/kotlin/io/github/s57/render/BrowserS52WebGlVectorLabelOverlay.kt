@@ -84,7 +84,7 @@ internal class BrowserS52WebGlVectorLabelOverlay(
     }
 
     private fun colorFor(palette: S52Palette, token: String): FloatArray {
-        val color = presLib.colors.color(token, palette) ?: presLib.colors.color("CHBLK", palette)
+        val color = presLib.colors.color(palette, token) ?: presLib.colors.color(palette, "CHBLK")
         return if (color != null) {
             floatArrayOf(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, 0.92f)
         } else {
