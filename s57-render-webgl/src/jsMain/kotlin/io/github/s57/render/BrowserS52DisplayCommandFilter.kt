@@ -11,6 +11,7 @@ import kotlin.math.min
 
 internal data class BrowserS52DisplayCommandPlan(
     val commands: List<S52DrawCommand>,
+    val labelCommands: List<S52DrawCommand>,
     val originalCommandCount: Int,
     val injectedAreaFillCount: Int,
     val suppressedRasterAreaPatternCount: Int,
@@ -26,11 +27,12 @@ internal data class BrowserS52DisplayCommandPlan(
                 stage = RenderPipelineStage.S52Portrayal,
                 severity = RenderPipelineSeverity.Info,
                 code = "s52.browser_display_filter",
-                message = "Browser display filter prepared S-52 commands for interactive viewing: original=$originalCommandCount rendered=${commands.size} injectedAreaFills=$injectedAreaFillCount suppressedRasterAreaPatterns=$suppressedRasterAreaPatternCount suppressedText=$suppressedTextCount suppressedSoundings=$suppressedSoundingCount",
+                message = "Browser display filter prepared S-52 commands for interactive viewing: original=$originalCommandCount webGlCommands=${commands.size} vectorLabels=${labelCommands.size} injectedAreaFills=$injectedAreaFillCount suppressedRasterAreaPatterns=$suppressedRasterAreaPatternCount suppressedText=$suppressedTextCount suppressedSoundings=$suppressedSoundingCount",
                 source = RenderPipelineSource(cellId = cellId),
                 metadata = mapOf(
                     "originalCommands" to originalCommandCount.toString(),
                     "renderedCommands" to commands.size.toString(),
+                    "vectorLabelCommands" to labelCommands.size.toString(),
                     "injectedAreaFills" to injectedAreaFillCount.toString(),
                     "suppressedRasterAreaPatterns" to suppressedRasterAreaPatternCount.toString(),
                     "suppressedText" to suppressedTextCount.toString(),
@@ -70,11 +72,12 @@ internal fun buildBrowserS52DisplayCommandPlan(
                     )
                     injectedAreaFillCount++
                 }
-                if (presLib.isRasterAreaPattern(command.patternName)) {
-                    suppressedRasterAreaPatternCount++
-                } else {
-                    baseCommands += command
-                }
+                // Do not let browser raster/vector pattern tiles draw on top of solid
+                // fills in the interactive demo.  Several S-52/OpenCPN pattern
+                // assets include a framed tile background; repeating that tile
+                // makes the chart look like the same area was rendered with
+                // rounded rectangles.  Keep the area fill, drop the tile.
+                suppressedRasterAreaPatternCount++
             }
             is S52DrawCommand.Text,
             is S52DrawCommand.Sounding -> labelCommands += command
@@ -95,19 +98,14 @@ internal fun buildBrowserS52DisplayCommandPlan(
     val originalSoundingCount = labelCommands.count { it is S52DrawCommand.Sounding }
 
     return BrowserS52DisplayCommandPlan(
-        commands = baseCommands + keptLabels,
+        commands = baseCommands,
+        labelCommands = keptLabels,
         originalCommandCount = commands.size,
         injectedAreaFillCount = injectedAreaFillCount,
         suppressedRasterAreaPatternCount = suppressedRasterAreaPatternCount,
         suppressedTextCount = originalTextCount - keptTextCount,
         suppressedSoundingCount = originalSoundingCount - keptSoundingCount
     )
-}
-
-private fun PresLibPack.isRasterAreaPattern(patternName: String): Boolean = try {
-    patterns.find(patternName)?.bitmap != null
-} catch (_: Throwable) {
-    false
 }
 
 private fun deconflictLabels(

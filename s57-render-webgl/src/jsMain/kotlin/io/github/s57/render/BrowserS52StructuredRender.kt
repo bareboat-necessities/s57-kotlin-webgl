@@ -2,6 +2,7 @@ package io.github.s57.render
 
 import io.github.s52.core.draw.S52DrawCommand
 import io.github.s52.core.settings.MarinerSettings
+import io.github.s52.render.webgl.RenderStats
 import io.github.s52.render.webgl.RenderViewport
 import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
@@ -28,6 +29,8 @@ private class CachedWebGlS52Renderer(
     var commands: List<S52DrawCommand> = emptyList()
     var settings: MarinerSettings? = null
     var viewport: RenderViewport? = null
+    var labelCommands: List<S52DrawCommand> = emptyList()
+    lateinit var labelRenderer: BrowserS52WebGlVectorLabelOverlay
 
     private var renderInProgress: Boolean = false
     private var pendingResourceRender: Boolean = false
@@ -39,7 +42,7 @@ private class CachedWebGlS52Renderer(
         return try {
             val activeSettings = settings ?: error("S-52 settings are not available")
             val activeViewport = viewport ?: error("S-52 viewport is not available")
-            renderer.render(commands, activeSettings, activeViewport)
+            renderWebGlOnly(activeSettings, activeViewport)
         } finally {
             renderInProgress = false
             scheduleResourceRenderIfNeeded()
@@ -53,6 +56,25 @@ private class CachedWebGlS52Renderer(
             suppressedReentrantResourceCallbacks++
         }
         scheduleResourceRenderIfNeeded()
+    }
+
+
+    private fun renderWebGlOnly(
+        activeSettings: MarinerSettings,
+        activeViewport: RenderViewport
+    ): RenderStats {
+        val s52Stats = renderer.render(commands, activeSettings, activeViewport)
+        if (!::labelRenderer.isInitialized || labelCommands.isEmpty()) return s52Stats
+        val labelStats = labelRenderer.render(
+            commands = labelCommands,
+            settings = activeSettings,
+            viewport = activeViewport
+        )
+        return s52Stats.copy(
+            textCount = labelStats.textCount,
+            soundingCount = labelStats.soundingCount,
+            drawCalls = s52Stats.drawCalls + labelStats.drawCalls
+        )
     }
 
     private fun scheduleResourceRenderIfNeeded() {
@@ -77,7 +99,7 @@ private class CachedWebGlS52Renderer(
         pendingResourceRender = false
         renderInProgress = true
         try {
-            val readyStats = renderer.render(commands, activeSettings, activeViewport)
+            val readyStats = renderWebGlOnly(activeSettings, activeViewport)
             window.asDynamic().s57S52ResourceRenderReady = true
             window.asDynamic().s57S52LastResourceDrawCalls = readyStats.drawCalls
             val previousReadyRenderCount =
@@ -180,9 +202,11 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
                     entry.renderReadyResources()
                 }
+                entry.labelRenderer = BrowserS52WebGlVectorLabelOverlay(canvas, bridge.presLib)
             }
         }
         cachedRenderer.commands = displayPlan.commands
+        cachedRenderer.labelCommands = displayPlan.labelCommands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
         val stats = cachedRenderer.renderCurrentFrame()
@@ -195,7 +219,8 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
-            " displayCommands=" + displayPlan.commands.size +
+            " webGlCommands=" + displayPlan.commands.size +
+            " vectorLabelCommands=" + displayPlan.labelCommands.size +
             " rasterCommands=" + portrayed.rasterCommandCount +
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
             " suppressedText=" + displayPlan.suppressedTextCount +
@@ -244,26 +269,15 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         val webglReason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
-            " webgl2Shim=" + webGl2KotlinJsCompatibilityShimStatus()
-        val fallback = renderS52CanvasCommandFallback(
+            " webgl2Shim=" + webGl2KotlinJsCompatibilityShimStatus() +
+            "; no Canvas2D or decoded-geometry fallback is allowed"
+        val s52 = portrayed.toSummary(failureStage = "webgl-render")
+        renderS52FailureFrame(
             canvasId = canvasId,
             frame = frame,
-            portrayed = portrayed.copy(commands = displayPlan.commands, diagnostics = portrayed.diagnostics + displayDiagnostics),
-            viewport = viewport,
-            presLib = bridge.presLib,
-            webglReason = webglReason
+            reason = webglReason,
+            s52 = s52
         )
-        if (fallback != null) {
-            fallback
-        } else {
-            val s52 = portrayed.toSummary(failureStage = "webgl-render")
-            renderS52FailureFrame(
-                canvasId = canvasId,
-                frame = frame,
-                reason = webglReason,
-                s52 = s52
-            )
-        }
     }
 }
 
@@ -337,7 +351,7 @@ fun BrowserS57WebGlRenderer.renderS52FailureFrame(
 }
 
 private fun clearCanvasForSuppressedS52Fallback(canvas: HTMLCanvasElement) {
-    // Intentionally do not call getContext("webgl") or getContext("2d") here.
+    // Intentionally do not claim any non-S-52 rendering context here.
     // If WebGL2 failed because the CI/browser backend was not ready, claiming
     // the chart canvas with WebGL1 or Canvas2D permanently prevents a later
     // S-52 WebGL2 retry from succeeding on the same DOM canvas.
