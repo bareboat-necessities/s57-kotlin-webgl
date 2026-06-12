@@ -1,11 +1,41 @@
 package io.github.s57.render
 
+import io.github.s52.core.draw.S52DrawCommand
+import io.github.s52.core.settings.MarinerSettings
 import io.github.s52.render.webgl.RenderViewport
 import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlin.js.console
 import org.w3c.dom.HTMLCanvasElement
+
+private val sharedS52Bridge: BrowserS52Bridge by lazy { BrowserS52Bridge() }
+private val webGlS52RendererCache = mutableMapOf<String, CachedWebGlS52Renderer>()
+
+private class CachedWebGlS52Renderer(
+    val canvasId: String
+) {
+    lateinit var renderer: WebGlS52Renderer
+    var commands: List<S52DrawCommand> = emptyList()
+    var settings: MarinerSettings? = null
+    var viewport: RenderViewport? = null
+
+    fun renderReadyResources() {
+        val activeSettings = settings ?: return
+        val activeViewport = viewport ?: return
+        if (!::renderer.isInitialized || commands.isEmpty()) return
+        try {
+            val readyStats = renderer.render(commands, activeSettings, activeViewport)
+            window.asDynamic().s57S52ResourceRenderReady = true
+            window.asDynamic().s57S52LastResourceDrawCalls = readyStats.drawCalls
+            val previousReadyRenderCount =
+                (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
+            window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
+        } catch (_: Throwable) {
+            // Resource-ready callbacks must never break the browser event loop.
+        }
+    }
+}
 
 fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     canvasId: String,
@@ -25,7 +55,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         )
     }
 
-    val bridge = BrowserS52Bridge()
+    val bridge = sharedS52Bridge
     val portrayed = bridge.portray(
         features = sourceFeatures,
         paletteName = frame.request.paletteName,
@@ -57,29 +87,17 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     return try {
         installWebGl2KotlinJsCompatibilityShim()
-        var renderer: WebGlS52Renderer? = null
-        renderer = WebGlS52Renderer(canvas, bridge.presLib) {
-            val readyRenderer = renderer ?: return@WebGlS52Renderer
-            try {
-                val readyStats = readyRenderer.render(portrayed.commands, portrayed.settings, viewport)
-                window.asDynamic().s57S52ResourceRenderReady = true
-                window.asDynamic().s57S52LastResourceDrawCalls = readyStats.drawCalls
-                val previousReadyRenderCount =
-                    (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
-                window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
-                val readySummary = portrayed.toSummary(drawCallCount = readyStats.drawCalls)
-                if (readySummary.shouldOverlayDecodedGeometry(sourceFeatures.size, linearOrAreaFeatureCount)) {
-                    // Intentionally disabled by policy.  The decoded renderer is a
-                    // parser/debug view, not an OpenCPN presentation fallback.
-                    console.warn("S-52 decoded-geometry overlay was requested but suppressed")
+        val cachedRenderer = webGlS52RendererCache.getOrPut(canvasId) {
+            CachedWebGlS52Renderer(canvasId).also { entry ->
+                entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
+                    entry.renderReadyResources()
                 }
-            } catch (_: Throwable) {
-                // The initial render path already reports errors. Resource-ready
-                // callbacks must never break the browser event loop.
             }
         }
-        val activeRenderer = renderer
-        val stats = activeRenderer.render(portrayed.commands, portrayed.settings, viewport)
+        cachedRenderer.commands = portrayed.commands
+        cachedRenderer.settings = portrayed.settings
+        cachedRenderer.viewport = viewport
+        val stats = cachedRenderer.renderer.render(portrayed.commands, portrayed.settings, viewport)
         window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
         val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +

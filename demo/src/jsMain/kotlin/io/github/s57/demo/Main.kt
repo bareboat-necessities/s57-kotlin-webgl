@@ -14,6 +14,7 @@ import io.github.s57.render.ChartCanvasCommand
 import io.github.s57.render.ChartCanvasEvent
 import io.github.s57.render.ChartCanvasFrameRenderer
 import io.github.s57.render.ScreenDelta
+import io.github.s57.render.ScreenPoint
 import io.github.s57.render.Phase16Counters
 import io.github.s57.render.RenderPipelineDiagnosticReport
 import io.github.s57.render.S57EngineImportResult
@@ -112,6 +113,10 @@ fun main() {
         initialSize = ScreenSize(canvas.width, canvas.height),
         initialPaletteName = normalizePaletteName(paletteSelect.value)
     )
+    var activeScaleOverride: Double? = null
+    var scheduleInteractiveRender: (String) -> Unit = { reason ->
+        chartCanvas.dispatch(ChartCanvasCommand.Render(reason))
+    }
     chartCanvas.addListener { event ->
         when (event) {
             is ChartCanvasEvent.ChartRendered -> latestCanvasRender = event
@@ -127,9 +132,20 @@ fun main() {
             when (event) {
                 is ChartUserEvent.ClickObject -> chartCanvas.dispatch(ChartCanvasCommand.Press(event.point))
                 is ChartUserEvent.TouchObject -> chartCanvas.dispatch(ChartCanvasCommand.Press(event.point))
-                is ChartUserEvent.Drag -> chartCanvas.dispatch(ChartCanvasCommand.Scroll(ScreenDelta(-event.delta.dx, -event.delta.dy)))
-                is ChartUserEvent.Zoom -> chartCanvas.dispatch(ChartCanvasCommand.Zoom(event.factor, event.focus))
-                is ChartUserEvent.Scroll -> chartCanvas.dispatch(ChartCanvasCommand.Scroll(event.delta))
+                is ChartUserEvent.Drag -> {
+                    chartCanvas.dispatch(ChartCanvasCommand.Scroll(ScreenDelta(-event.delta.dx, -event.delta.dy), redraw = false))
+                    scheduleInteractiveRender("drag")
+                }
+                is ChartUserEvent.Zoom -> {
+                    chartCanvas.dispatch(ChartCanvasCommand.Zoom(event.factor, event.focus, redraw = false))
+                    activeScaleOverride = chartCanvas.status().scaleDenominator
+                    activeScaleOverride?.let { scaleInput.value = it.roundToInt().toString() }
+                    scheduleInteractiveRender("zoom")
+                }
+                is ChartUserEvent.Scroll -> {
+                    chartCanvas.dispatch(ChartCanvasCommand.Scroll(event.delta, redraw = false))
+                    scheduleInteractiveRender("scroll")
+                }
                 else -> events?.textContent = event.toString()
             }
         }
@@ -141,7 +157,6 @@ fun main() {
     var activeCellId: String? = null
     var selectedFiles = emptyList<File>()
     var selectedLabels = emptyList<String>()
-    var activeScaleOverride: Double? = null
     var importedObjectCacheEntries = emptyList<BrowserChartCacheEntry>()
     var latestPipelineReport = RenderPipelineDiagnosticReport(
         metadata = mapOf("status" to "Phase 26 viewer initialized; no render has completed yet")
@@ -251,6 +266,32 @@ fun main() {
         }
     }
 
+    var pendingInteractiveRenderTimer: Int? = null
+
+    fun syncScaleInputFromCanvas() {
+        val scale = chartCanvas.status().scaleDenominator
+        activeScaleOverride = scale
+        if (scale != null) scaleInput.value = scale.roundToInt().toString()
+    }
+
+    scheduleInteractiveRender = { reason ->
+        pendingInteractiveRenderTimer?.let { window.clearTimeout(it) }
+        pendingInteractiveRenderTimer = window.setTimeout({
+            pendingInteractiveRenderTimer = null
+            latestCanvasRender = null
+            chartCanvas.dispatch(ChartCanvasCommand.Render(reason))
+            syncScaleInputFromCanvas()
+            latestCanvasRender?.let { rendered ->
+                status?.textContent = buildString {
+                    appendLine("Rendered interactive " + reason + " scale=" + (chartCanvas.status().scaleDenominator?.roundToInt()?.toString() ?: "auto"))
+                    appendLine(rendered.drawing.message)
+                    appendLine("Use Download diagnostics JSON for the last full diagnostic report.")
+                }
+            }
+            updateCellSummary()
+        }, 90)
+    }
+
     fun importSummary(): String = buildString {
         appendLine("S-57 import: imported=" + imports.size + " failed=" + failures.size + " cells=" + cells().size + " cached=" + cachedEntries.size)
         val cell = activeCell()
@@ -291,12 +332,17 @@ fun main() {
         }
         chartCanvas.dispatch(ChartCanvasCommand.Resize(ScreenSize(canvas.width, canvas.height)))
         val chartIds = displayedChartIds().let { ids -> listOf(cell.cellId) + ids.filterNot { it == cell.cellId } }
-        chartCanvas.dispatch(ChartCanvasCommand.ShowCharts(chartIds, fitToFirstChart = true))
+        val previousCanvasStatus = chartCanvas.status()
+        val shouldFitView = boundsFraction != null ||
+            previousCanvasStatus.activeChartId != cell.cellId ||
+            previousCanvasStatus.displayedChartIds != chartIds ||
+            previousCanvasStatus.bounds == null
+        chartCanvas.dispatch(ChartCanvasCommand.ShowCharts(chartIds, fitToFirstChart = shouldFitView, redraw = false))
         val fullCellRequest = chartRenderRequestForCell(cell, canvas.width, canvas.height)
         val autoScale = boundsFraction?.let { fraction ->
             val bounds = snapshotBounds(cell, fraction) ?: fullCellRequest.bounds
             val fit = chartViewportFitForBounds(bounds, ScreenSize(canvas.width, canvas.height), paddingFraction = 0.08)
-            chartCanvas.dispatch(ChartCanvasCommand.SetView(fit.fittedBounds, fit.scaleDenominator))
+            chartCanvas.dispatch(ChartCanvasCommand.SetView(fit.fittedBounds, fit.scaleDenominator, redraw = false))
             fit.scaleDenominator
         } ?: chartCanvas.status().scaleDenominator ?: fullCellRequest.scaleDenominator
         val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoScale)
@@ -305,8 +351,8 @@ fun main() {
         val palette = normalizePaletteName(paletteSelect.value)
         paletteSelect.value = palette
         latestCanvasRender = null
-        chartCanvas.dispatch(ChartCanvasCommand.SetPalette(palette))
-        chartCanvas.dispatch(ChartCanvasCommand.SetScale(scale))
+        chartCanvas.dispatch(ChartCanvasCommand.SetPalette(palette, redraw = false))
+        chartCanvas.dispatch(ChartCanvasCommand.SetScale(scale, redraw = false))
         chartCanvas.dispatch(ChartCanvasCommand.Render(label))
         val rendered = latestCanvasRender
         if (rendered == null) {
@@ -721,32 +767,40 @@ fun main() {
 
     paletteSelect.onchange = {
         paletteSelect.value = normalizePaletteName(paletteSelect.value)
+        chartCanvas.dispatch(ChartCanvasCommand.SetPalette(paletteSelect.value, redraw = false))
         updateCellSummary()
-        renderActive("palette change")
+        latestCanvasRender = null
+        chartCanvas.dispatch(ChartCanvasCommand.Render("palette change"))
+        syncScaleInputFromCanvas()
         null
     }
 
     scaleInput.onchange = {
         activeScaleOverride = scaleInput.value.toDoubleOrNull()?.let(::boundedScale)
         activeScaleOverride?.let { scaleInput.value = it.roundToInt().toString() }
+        activeScaleOverride?.let { chartCanvas.dispatch(ChartCanvasCommand.SetScale(it, redraw = false)) }
         updateCellSummary()
-        renderActive("scale change")
+        latestCanvasRender = null
+        chartCanvas.dispatch(ChartCanvasCommand.Render("scale change"))
+        syncScaleInputFromCanvas()
         null
     }
 
     zoomInButton.onclick = {
-        val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
-        activeScaleOverride = boundedScale(base / 1.6)
-        scaleInput.value = activeScaleOverride!!.roundToInt().toString()
-        renderActive("zoom in")
+        val focus = ScreenPoint(canvas.width.toDouble() / 2.0, canvas.height.toDouble() / 2.0)
+        chartCanvas.dispatch(ChartCanvasCommand.Zoom(1.6, focus, redraw = false))
+        syncScaleInputFromCanvas()
+        updateCellSummary()
+        scheduleInteractiveRender("zoom in")
         null
     }
 
     zoomOutButton.onclick = {
-        val base = activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: activeCell()?.let { chartRenderRequestForCell(it, canvas.width, canvas.height).scaleDenominator } ?: 40_000.0
-        activeScaleOverride = boundedScale(base * 1.6)
-        scaleInput.value = activeScaleOverride!!.roundToInt().toString()
-        renderActive("zoom out")
+        val focus = ScreenPoint(canvas.width.toDouble() / 2.0, canvas.height.toDouble() / 2.0)
+        chartCanvas.dispatch(ChartCanvasCommand.Zoom(1.0 / 1.6, focus, redraw = false))
+        syncScaleInputFromCanvas()
+        updateCellSummary()
+        scheduleInteractiveRender("zoom out")
         null
     }
 

@@ -65,6 +65,31 @@ class ChartCanvasTest {
         assertTrue(lastFrame?.projectedFeatures?.any { it.objectClass == "BOYCAR" } == true)
     }
 
+
+    @Test
+    fun interactiveCommandsCanBeCoalescedWithoutImmediateRedraw() {
+        val engine = S57WebGlEngine()
+        engine.importDataset(testDataset())
+        var drawCount = 0
+        val canvas = S57ChartCanvas(
+            engine = engine,
+            frameRenderer = ChartCanvasFrameRenderer { frame ->
+                drawCount++
+                frame.summary()
+            },
+            initialSize = ScreenSize(800, 600)
+        )
+
+        canvas.dispatch(ChartCanvasCommand.ShowCharts(listOf("US5TEST")))
+        val afterInitialDraw = drawCount
+        canvas.dispatch(ChartCanvasCommand.Zoom(1.2, ScreenPoint(400.0, 300.0), redraw = false))
+        canvas.dispatch(ChartCanvasCommand.Scroll(ScreenDelta(25.0, 0.0), redraw = false))
+
+        assertEquals(afterInitialDraw, drawCount)
+        canvas.dispatch(ChartCanvasCommand.Render("coalesced interaction"))
+        assertEquals(afterInitialDraw + 1, drawCount)
+    }
+
     @Test
     fun pressPublishesSelectionEventsFromLastFrame() {
         val engine = S57WebGlEngine()

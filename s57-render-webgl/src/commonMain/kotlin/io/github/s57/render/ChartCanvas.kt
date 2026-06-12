@@ -32,13 +32,13 @@ fun interface ChartCanvasFrameRenderer {
 }
 
 sealed class ChartCanvasCommand {
-    data class ShowCharts(val chartIds: List<String>, val fitToFirstChart: Boolean = true) : ChartCanvasCommand()
-    data class SetPalette(val paletteName: String) : ChartCanvasCommand()
-    data class SetScale(val scaleDenominator: Double) : ChartCanvasCommand()
+    data class ShowCharts(val chartIds: List<String>, val fitToFirstChart: Boolean = true, val redraw: Boolean = true) : ChartCanvasCommand()
+    data class SetPalette(val paletteName: String, val redraw: Boolean = true) : ChartCanvasCommand()
+    data class SetScale(val scaleDenominator: Double, val redraw: Boolean = true) : ChartCanvasCommand()
     data class Resize(val size: ScreenSize) : ChartCanvasCommand()
-    data class SetView(val bounds: GeoBounds, val scaleDenominator: Double? = null) : ChartCanvasCommand()
-    data class Zoom(val factor: Double, val focus: ScreenPoint? = null) : ChartCanvasCommand()
-    data class Scroll(val delta: ScreenDelta) : ChartCanvasCommand()
+    data class SetView(val bounds: GeoBounds, val scaleDenominator: Double? = null, val redraw: Boolean = true) : ChartCanvasCommand()
+    data class Zoom(val factor: Double, val focus: ScreenPoint? = null, val redraw: Boolean = true) : ChartCanvasCommand()
+    data class Scroll(val delta: ScreenDelta, val redraw: Boolean = true) : ChartCanvasCommand()
     data class MoveCursor(val point: ScreenPoint?) : ChartCanvasCommand()
     data class Center(val location: GeoPoint? = null) : ChartCanvasCommand()
     data class Press(val point: ScreenPoint, val radiusPx: Double = 12.0) : ChartCanvasCommand()
@@ -86,13 +86,18 @@ class S57ChartCanvas(
 
     override fun dispatch(command: ChartCanvasCommand): ChartCanvasStatus {
         when (command) {
-            is ChartCanvasCommand.ShowCharts -> showCharts(command.chartIds, command.fitToFirstChart, command)
-            is ChartCanvasCommand.SetPalette -> updateStatus(redraw = true, reason = "palette change") {
-                copy(paletteName = normalizePaletteName(command.paletteName))
+            is ChartCanvasCommand.ShowCharts -> showCharts(command.chartIds, command.fitToFirstChart, command.redraw, command)
+            is ChartCanvasCommand.SetPalette -> {
+                val normalizedPalette = normalizePaletteName(command.paletteName)
+                updateStatus(redraw = command.redraw && normalizedPalette != status.paletteName, reason = "palette change") {
+                    copy(paletteName = normalizedPalette)
+                }
             }
             is ChartCanvasCommand.SetScale -> if (command.scaleDenominator > 0.0) {
-                updateViewBoundsForScale(boundedScale(command.scaleDenominator))
-                updateStatus(redraw = true, reason = "scale change") { copy(scaleDenominator = boundedScale(command.scaleDenominator)) }
+                val nextScale = boundedScale(command.scaleDenominator)
+                val previousScale = status.scaleDenominator ?: currentRequest?.scaleDenominator
+                updateViewBoundsForScale(nextScale)
+                updateStatus(redraw = command.redraw && previousScale != nextScale, reason = "scale change") { copy(scaleDenominator = nextScale) }
             } else reject(command, "Scale denominator must be positive")
             is ChartCanvasCommand.Resize -> {
                 status = status.copy(rectangle = command.size)
@@ -102,15 +107,15 @@ class S57ChartCanvas(
             }
             is ChartCanvasCommand.SetView -> {
                 setView(command.bounds, command.scaleDenominator)
-                render("view change")
+                if (command.redraw) render("view change")
             }
             is ChartCanvasCommand.Zoom -> if (command.factor > 0.0) {
                 zoom(command.factor, command.focus)
-                render("zoom")
+                if (command.redraw) render("zoom")
             } else reject(command, "Zoom factor must be positive")
             is ChartCanvasCommand.Scroll -> {
                 scroll(command.delta)
-                render("scroll")
+                if (command.redraw) render("scroll")
             }
             is ChartCanvasCommand.MoveCursor -> moveCursor(command.point)
             is ChartCanvasCommand.Center -> {
@@ -130,7 +135,7 @@ class S57ChartCanvas(
         return ChartCanvasSubscription { listeners.remove(listener) }
     }
 
-    private fun showCharts(chartIds: List<String>, fitToFirstChart: Boolean, command: ChartCanvasCommand) {
+    private fun showCharts(chartIds: List<String>, fitToFirstChart: Boolean, redraw: Boolean, command: ChartCanvasCommand) {
         val normalizedIds = chartIds.mapNotNull { it.takeIf(String::isNotBlank) }.distinct()
         status = status.copy(displayedChartIds = normalizedIds, activeChartId = normalizedIds.firstOrNull())
         if (normalizedIds.isEmpty()) {
@@ -149,7 +154,7 @@ class S57ChartCanvas(
             }
             fitCharts(active, fitBounds)
         }
-        render("show charts")
+        if (redraw) render("show charts")
     }
 
     private fun updateStatus(redraw: Boolean, reason: String, block: ChartCanvasStatus.() -> ChartCanvasStatus) {
@@ -179,7 +184,7 @@ class S57ChartCanvas(
                 zoom = fit.scaleDenominator,
                 viewport = status.rectangle
             ),
-            centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = true),
+            centerCrosshair = CenterCrosshairConfig(enabled = true, queryOnRender = false),
             depthMesh = DepthMeshConfig(enabled = false),
             renderMode = ChartRenderMode.Flat2D,
             cellIds = status.displayedChartIds.ifEmpty { listOf(activeCell.cellId) }
