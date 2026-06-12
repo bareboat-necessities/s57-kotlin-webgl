@@ -29,10 +29,53 @@ private class CachedWebGlS52Renderer(
     var settings: MarinerSettings? = null
     var viewport: RenderViewport? = null
 
+    private var renderInProgress: Boolean = false
+    private var pendingResourceRender: Boolean = false
+    private var resourceRenderScheduled: Boolean = false
+    private var suppressedReentrantResourceCallbacks: Int = 0
+
+    fun renderCurrentFrame(): io.github.s52.render.webgl.RenderStats {
+        renderInProgress = true
+        return try {
+            val activeSettings = settings ?: error("S-52 settings are not available")
+            val activeViewport = viewport ?: error("S-52 viewport is not available")
+            renderer.render(commands, activeSettings, activeViewport)
+        } finally {
+            renderInProgress = false
+            scheduleResourceRenderIfNeeded()
+        }
+    }
+
     fun renderReadyResources() {
+        if (!::renderer.isInitialized || commands.isEmpty()) return
+        pendingResourceRender = true
+        if (renderInProgress) {
+            suppressedReentrantResourceCallbacks++
+        }
+        scheduleResourceRenderIfNeeded()
+    }
+
+    private fun scheduleResourceRenderIfNeeded() {
+        if (!pendingResourceRender || resourceRenderScheduled) return
+        if (!::renderer.isInitialized || commands.isEmpty() || settings == null || viewport == null) return
+        resourceRenderScheduled = true
+        window.setTimeout({
+            resourceRenderScheduled = false
+            if (renderInProgress) {
+                suppressedReentrantResourceCallbacks++
+                scheduleResourceRenderIfNeeded()
+            } else {
+                renderReadyResourcesAfterCurrentFrame()
+            }
+        }, 0)
+    }
+
+    private fun renderReadyResourcesAfterCurrentFrame() {
         val activeSettings = settings ?: return
         val activeViewport = viewport ?: return
         if (!::renderer.isInitialized || commands.isEmpty()) return
+        pendingResourceRender = false
+        renderInProgress = true
         try {
             val readyStats = renderer.render(commands, activeSettings, activeViewport)
             window.asDynamic().s57S52ResourceRenderReady = true
@@ -40,8 +83,11 @@ private class CachedWebGlS52Renderer(
             val previousReadyRenderCount =
                 (window.asDynamic().s57S52ResourceRenderCount as? Number)?.toInt() ?: 0
             window.asDynamic().s57S52ResourceRenderCount = previousReadyRenderCount + 1
+            window.asDynamic().s57S52SuppressedReentrantResourceCallbacks = suppressedReentrantResourceCallbacks
         } catch (_: Throwable) {
             // Resource-ready callbacks must never break the browser event loop.
+        } finally {
+            renderInProgress = false
         }
     }
 }
@@ -118,6 +164,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     window.asDynamic().s57S52SuppressedSoundingCount = displayPlan.suppressedSoundingCount
     window.asDynamic().s57S52InitialDrawCalls = 0
     window.asDynamic().s57S52LastResourceDrawCalls = 0
+    window.asDynamic().s57S52SuppressedReentrantResourceCallbacks = 0
 
     return try {
         installWebGl2KotlinJsCompatibilityShim()
@@ -138,7 +185,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         cachedRenderer.commands = displayPlan.commands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
-        val stats = cachedRenderer.renderer.render(displayPlan.commands, portrayed.settings, viewport)
+        val stats = cachedRenderer.renderCurrentFrame()
         window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
         val s52Base = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val s52 = s52Base.copy(
@@ -153,6 +200,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
             " suppressedText=" + displayPlan.suppressedTextCount +
             " suppressedSoundings=" + displayPlan.suppressedSoundingCount +
+            " reentrantResourceCallbacks=" + ((window.asDynamic().s57S52SuppressedReentrantResourceCallbacks as? Number)?.toInt() ?: 0) +
             " drawCalls=" + stats.drawCalls +
             " symbols=" + stats.symbolCount +
             " lines=" + stats.lineCount +
