@@ -108,11 +108,13 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 
     return try {
         installWebGl2KotlinJsCompatibilityShim()
-        val preparedCanvas = prepareCanvasForS52WebGl2(canvasId, canvas)
-        if (preparedCanvas !== canvas) {
-            canvas = preparedCanvas
-            webGlS52RendererCache.remove(canvasId)
-        }
+        /*
+         * Do not pre-probe or replace the canvas before constructing the S-52
+         * renderer.  In browsers this can create/claim a context before the
+         * library renderer sees the canvas, after which the library constructor
+         * can still report "WebGL2 is not available".  Let WebGlS52Renderer be
+         * the first code path to request the WebGL2 context.
+         */
         val cachedRenderer = webGlS52RendererCache.getOrPut(canvasId) {
             CachedWebGlS52Renderer(canvasId).also { entry ->
                 entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
@@ -170,20 +172,34 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             )
         }
     } catch (t: Throwable) {
-        val s52 = portrayed.toSummary(failureStage = "webgl-render")
-        renderS52FailureFrame(
+        val webglReason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
+            " encFeatures=" + portrayed.featureCount +
+            " commands=" + portrayed.commands.size +
+            " webgl2Shim=" + webGl2KotlinJsCompatibilityShimStatus()
+        val fallback = renderS52CanvasCommandFallback(
             canvasId = canvasId,
             frame = frame,
-            reason = "S-52 WebGL render failed after portrayal: " + (t.message ?: t.toString()) +
-                " encFeatures=" + portrayed.featureCount +
-                " commands=" + portrayed.commands.size +
-                " webgl2Shim=" + webGl2KotlinJsCompatibilityShimStatus(),
-            s52 = s52
+            portrayed = portrayed,
+            viewport = viewport,
+            presLib = bridge.presLib,
+            webglReason = webglReason
         )
+        if (fallback != null) {
+            fallback
+        } else {
+            val s52 = portrayed.toSummary(failureStage = "webgl-render")
+            renderS52FailureFrame(
+                canvasId = canvasId,
+                frame = frame,
+                reason = webglReason,
+                s52 = s52
+            )
+        }
     }
 }
 
 
+@Suppress("unused")
 private fun prepareCanvasForS52WebGl2(canvasId: String, canvas: HTMLCanvasElement): HTMLCanvasElement {
     if (canvas.hasUsableWebGl2Context()) return canvas
 
