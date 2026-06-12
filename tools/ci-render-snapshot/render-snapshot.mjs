@@ -22,6 +22,7 @@ const width = Number(arg('width', '1280'));
 const height = Number(arg('height', '720'));
 const headless = arg('headless', process.env.PHASE26_HEADLESS ?? 'true') !== 'false';
 const browserChannel = arg('browser-channel', process.env.PHASE26_BROWSER_CHANNEL ?? 'chromium');
+const requestedGlMode = arg('gl-mode', process.env.PHASE26_GL_MODE ?? 'auto');
 
 if (!existsSync(appDir)) throw new Error(`Demo app directory does not exist: ${appDir}`);
 if (!existsSync(encFile) || statSync(encFile).size <= 0) throw new Error(`ENC file is missing or empty: ${encFile}`);
@@ -201,10 +202,8 @@ async function readPhase26Report(page) {
     // changes, while the object-returning helper is only a convenience for
     // manual browser debugging.
     if (typeof window.s57Phase26LatestReportJson === 'string') return JSON.parse(window.s57Phase26LatestReportJson || '{}');
-    if (typeof window.s57Phase26ReportJson === 'function') return JSON.parse(window.s57Phase26ReportJson());
-    if (typeof window.s57Phase26ReportJson === 'string') return JSON.parse(window.s57Phase26ReportJson);
-    if (typeof window.s57Phase26Report === 'function') return window.s57Phase26Report();
-    throw new Error('window.s57Phase26ReportJson is not available');
+    if (typeof window.s57Phase26ReportJson === 'string') return JSON.parse(window.s57Phase26ReportJson || '{}');
+    throw new Error('window.s57Phase26LatestReportJson is not available');
   });
 }
 
@@ -228,26 +227,90 @@ async function chartCanvasWebGl2Available(page) {
   });
 }
 
+async function pageWebGl2Info(page) {
+  return await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 4;
+    canvas.height = 4;
+    const gl = canvas.getContext('webgl2', {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      failIfMajorPerformanceCaveat: false
+    });
+    if (!gl) return { available: false, renderer: '', vendor: '', version: '' };
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    return {
+      available: true,
+      renderer: debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)) : '',
+      vendor: debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)) : '',
+      version: String(gl.getParameter(gl.VERSION) || '')
+    };
+  });
+}
+
+function chromiumLaunchCandidates() {
+  const common = [
+    '--enable-webgl',
+    '--enable-gpu',
+    '--ignore-gpu-blocklist',
+    '--disable-gpu-sandbox',
+    '--disable-dev-shm-usage',
+    '--allow-unsafe-swiftshader',
+    '--enable-unsafe-swiftshader'
+  ];
+  const candidates = [];
+  const add = (name, extraArgs) => candidates.push({ name, args: [...common, ...extraArgs] });
+
+  // First prefer regular headed Chromium/Xvfb with its default GL stack.  On
+  // GitHub runners this often resolves to Mesa/llvmpipe and exposes WebGL2.
+  // Forcing ANGLE/SwiftShader too early can disable WebGL2 on some Chromium
+  // builds, which was the source of the blue-only render.png regression.
+  if (requestedGlMode === 'auto' || requestedGlMode === 'native') add('native-default-gl', []);
+  if (requestedGlMode === 'auto' || requestedGlMode === 'egl') add('egl', ['--use-gl=egl']);
+  if (requestedGlMode === 'auto' || requestedGlMode === 'desktop') add('desktop-gl', ['--use-gl=desktop']);
+  if (requestedGlMode === 'auto' || requestedGlMode === 'swiftshader') add('swiftshader-gl', ['--use-gl=swiftshader']);
+  if (requestedGlMode === 'auto' || requestedGlMode === 'angle-swiftshader') add('angle-swiftshader', ['--use-gl=angle', '--use-angle=swiftshader']);
+  return candidates;
+}
+
+async function launchBrowserWithWebGl2Probe() {
+  const candidates = chromiumLaunchCandidates();
+  const failures = [];
+  for (const candidate of candidates) {
+    const launchOptions = { headless, args: candidate.args, ignoreDefaultArgs: ['--disable-gpu'] };
+    if (browserChannel && browserChannel !== 'default') launchOptions.channel = browserChannel;
+    console.log(`Phase 26 probing Chromium headless=${headless} channel=${browserChannel || 'default'} glMode=${candidate.name}`);
+    let candidateBrowser;
+    try {
+      candidateBrowser = await chromium.launch(launchOptions);
+      const probePage = await candidateBrowser.newPage({ viewport: { width: 16, height: 16 } });
+      const info = await pageWebGl2Info(probePage);
+      await probePage.close().catch(() => {});
+      if (info.available) {
+        console.log(`Phase 26 selected Chromium glMode=${candidate.name} webgl2=${info.version} renderer=${info.renderer || 'unknown'}`);
+        return { browser: candidateBrowser, glMode: candidate.name, webGl2Info: info };
+      }
+      failures.push(`${candidate.name}: WebGL2 unavailable`);
+    } catch (error) {
+      failures.push(`${candidate.name}: ${error?.message ?? String(error)}`);
+    }
+    if (candidateBrowser) await candidateBrowser.close().catch(() => {});
+  }
+  throw new Error(
+    `Chromium did not expose WebGL2 before loading the chart app (channel=${browserChannel || 'default'}, headless=${headless}, requestedGlMode=${requestedGlMode}). ` +
+    `Tried: ${failures.join('; ')}. ` +
+    'Use a runner/browser with WebGL2, or set PHASE26_GL_MODE=native|egl|desktop|swiftshader|angle-swiftshader to force a specific backend.'
+  );
+}
+
 const { server, url } = await startServer(appDir);
 let browser;
 try {
-  const launchOptions = {
-    headless,
-    args: [
-      '--enable-webgl',
-      '--ignore-gpu-blocklist',
-      '--disable-gpu-sandbox',
-      '--disable-dev-shm-usage',
-      '--enable-unsafe-swiftshader',
-      '--use-angle=swiftshader',
-      '--use-gl=angle'
-    ]
-  };
-  if (browserChannel && browserChannel !== 'default') {
-    launchOptions.channel = browserChannel;
-  }
-  console.log(`Phase 26 launching Chromium headless=${headless} channel=${browserChannel || 'default'}`);
-  browser = await chromium.launch(launchOptions);
+  const launched = await launchBrowserWithWebGl2Probe();
+  browser = launched.browser;
+  const selectedGlMode = launched.glMode;
   const page = await browser.newPage({ viewport: { width, height } });
   page.on('console', (message) => console.log(`[browser:${message.type()}] ${message.text()}`));
   page.on('pageerror', (error) => console.error(`[browser:error] ${error.message}`));
@@ -286,8 +349,8 @@ try {
     writeFileSync(path.join(outDir, 'diagnostics.json'), `${JSON.stringify(report, null, 2)}\n`);
     throw new Error(
       `Phase 26 S-52 portrayal produced ${reportCounter(report, 's52Commands')} commands, ` +
-      `but the browser did not expose a usable WebGL2 renderer (channel=${browserChannel || 'default'}, headless=${headless}). ` +
-      'Refusing to publish a blank blue render.png. Install regular Chromium with `npx playwright install --with-deps --no-shell chromium` and run with `--browser-channel=chromium` under Xvfb.'
+      `but the chart canvas lost WebGL2 after the preflight succeeded (channel=${browserChannel || 'default'}, headless=${headless}, glMode=${selectedGlMode}). ` +
+      'Refusing to publish a blank blue render.png. This usually means some earlier code claimed the canvas with WebGL1/2D before S-52 WebGL2 rendering.'
     );
   }
 
@@ -350,6 +413,7 @@ try {
     `s52Commands=${report.counters?.s52Commands ?? 'unknown'}`,
     `s52DrawCalls=${report.counters?.s52DrawCalls ?? 'unknown'}`,
     `webGl2Available=${webGl2Available}`,
+    `chromiumGlMode=${selectedGlMode}`,
     `canvasDistinctColors=${visualStats.distinctColors}`,
     `canvasDominantRatio=${visualStats.dominantRatio.toFixed(6)}`,
     `missingSymbols=${report.counters?.missingSymbols ?? 0}`,

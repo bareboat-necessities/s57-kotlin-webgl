@@ -144,18 +144,9 @@ fun main() {
         val dynamicWindow = window.asDynamic()
         dynamicWindow.s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
         dynamicWindow.s57Phase26LatestReportJson = latestPipelineReport.toJson()
-        // Export Phase 26 diagnostics through plain JavaScript wrappers.  Do not
-        // expose Kotlin lambdas here: calling Kotlin function objects from
-        // Playwright/Chrome can trip Kotlin/JS dynamic bridge code and report
-        // "P.asDynamic is not a function".
-        js("""
-            window.s57Phase26ReportJson = function() {
-                return window.s57Phase26LatestReportJson || '{}';
-            };
-            window.s57Phase26Report = function() {
-                return JSON.parse(window.s57Phase26LatestReportJson || '{}');
-            };
-        """)
+        // Keep the CI/report handoff as a plain string property.  Do not expose
+        // Kotlin function objects, and do not install wrapper functions from here:
+        // Playwright should read s57Phase26LatestReportJson directly.
     }
 
     fun downloadUrl(fileName: String, url: String) {

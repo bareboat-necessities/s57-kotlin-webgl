@@ -16,7 +16,7 @@ class BrowserS57WebGlRenderer(
     fun renderPlaceholder(canvasId: String): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found")
-        val gl = canvas.getContext("webgl") as? WebGLRenderingContext
+        val gl = ((canvas.getContext("webgl2") ?: canvas.getContext("webgl")) as? WebGLRenderingContext)
             ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available")
 
         gl.viewport(0, 0, canvas.width, canvas.height)
@@ -28,7 +28,7 @@ class BrowserS57WebGlRenderer(
     fun renderStatic(canvasId: String, request: ChartRenderRequest): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", request.camera)
-        val gl = canvas.getContext("webgl") as? WebGLRenderingContext
+        val gl = ((canvas.getContext("webgl2") ?: canvas.getContext("webgl")) as? WebGLRenderingContext)
             ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL is not available", request.camera)
 
         gl.viewport(0, 0, canvas.width, canvas.height)
@@ -63,7 +63,7 @@ class BrowserS57WebGlRenderer(
     fun renderFrame(canvasId: String, frame: StaticChartFrame): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
-        val rawGl = canvas.getContext("webgl") ?: canvas.getContext("webgl2")
+        val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
             ?: return renderFrame2d(
                 canvas = canvas,
                 frame = frame,
@@ -92,7 +92,7 @@ class BrowserS57WebGlRenderer(
     ): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", frame.request.camera)
-        val rawGl = canvas.getContext("webgl") ?: canvas.getContext("webgl2")
+        val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
             ?: return renderFrame2d(
                 canvas = canvas,
                 frame = frame,

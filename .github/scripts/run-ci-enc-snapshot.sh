@@ -44,22 +44,24 @@ bash .github/scripts/download-first-enc-cell.sh
   # usable WebGL2 on GitHub runners even when S-52 portrayal itself succeeds.
   npx playwright install --with-deps --no-shell chromium
   npx playwright install --list || true
-  if ! command -v xvfb-run >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update
-    sudo apt-get install -y xvfb
+    sudo apt-get install -y xvfb libegl1 libgles2 libgl1-mesa-dri libglx-mesa0 mesa-utils
   fi
   if command -v xvfb-run >/dev/null 2>&1; then
-    PHASE26_HEADLESS=false PHASE26_BROWSER_CHANNEL=chromium \
+    PHASE26_HEADLESS=false PHASE26_BROWSER_CHANNEL=chromium PHASE26_GL_MODE=auto \
       xvfb-run -a -s "-screen 0 1280x720x24" \
       npm run snapshot -- \
         --app-dir="$ROOT_DIR/$APP_DIR" \
         --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" \
         --out-dir="$ROOT_DIR/build/ci-enc-snapshot" \
         --headless=false \
-        --browser-channel=chromium
+        --browser-channel=chromium \
+        --gl-mode=auto
   else
     echo "xvfb-run is not available; running Chromium new-headless snapshot. The snapshot will fail instead of publishing a blank render.png if WebGL2 is unavailable." >&2
-    PHASE26_BROWSER_CHANNEL=chromium npm run snapshot -- --app-dir="$ROOT_DIR/$APP_DIR" --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" --out-dir="$ROOT_DIR/build/ci-enc-snapshot" --browser-channel=chromium
+    PHASE26_BROWSER_CHANNEL=chromium PHASE26_GL_MODE=auto npm run snapshot -- --app-dir="$ROOT_DIR/$APP_DIR" --enc-file="$ROOT_DIR/build/ci-enc-snapshot/input/cell.000" --out-dir="$ROOT_DIR/build/ci-enc-snapshot" --browser-channel=chromium \
+        --gl-mode=auto
   fi
 )
 

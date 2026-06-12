@@ -5,7 +5,6 @@ import io.github.s52.render.webgl.WebGlS52Renderer
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlin.js.console
-import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
 
 fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
@@ -154,7 +153,6 @@ fun BrowserS57WebGlRenderer.renderS52FailureFrame(
     s52: S52RenderSummary
 ): RenderedFrameSummary {
     val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
-    if (canvas != null) clearCanvasForSuppressedS52Fallback(canvas)
     val diagnostic = RenderPipelineDiagnostic(
         stage = if (s52.failureStage == "portrayal") RenderPipelineStage.S52Portrayal else RenderPipelineStage.WebGl,
         severity = RenderPipelineSeverity.Error,
@@ -178,20 +176,13 @@ fun BrowserS57WebGlRenderer.renderS52FailureFrame(
 }
 
 private fun clearCanvasForSuppressedS52Fallback(canvas: HTMLCanvasElement) {
-    val rawGl = canvas.getContext("webgl2") ?: canvas.getContext("webgl")
-    if (rawGl != null) {
-        val gl = rawGl.asDynamic()
-        gl.viewport(0, 0, canvas.width, canvas.height)
-        gl.clearColor(0.92, 0.96, 0.99, 1.0)
-        gl.clear(0x4000)
-        return
-    }
-    val ctx = canvas.getContext("2d") as? CanvasRenderingContext2D
-    if (ctx != null) {
-        ctx.fillStyle = "rgba(235, 245, 252, 1.0)"
-        ctx.fillRect(0.0, 0.0, canvas.width.toDouble(), canvas.height.toDouble())
-    }
+    // Intentionally do not call getContext("webgl") or getContext("2d") here.
+    // If WebGL2 failed because the CI/browser backend was not ready, claiming
+    // the chart canvas with WebGL1 or Canvas2D permanently prevents a later
+    // S-52 WebGL2 retry from succeeding on the same DOM canvas.
+    canvas.setAttribute("data-s52-fallback-suppressed", "true")
 }
+
 
 private fun S52RenderSummary.withPartialLineAreaDiagnostic(
     frame: StaticChartFrame,
