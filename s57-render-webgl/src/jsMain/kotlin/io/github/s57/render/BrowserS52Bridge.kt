@@ -543,7 +543,7 @@ private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean 
 
 private fun String.isKnownS57AttributeMissingFromBundledS52Catalog(): Boolean = uppercase() in setOf(
     // These are valid S-57 attributes observed in NOAA cells but missing from
-    // the S-52 0.5.2 typed catalogue.  They should not drown CI/browser logs as
+    // the S-52 0.5.3 typed catalogue.  They should not drown CI/browser logs as
     // "unsupported" warnings.  When the upstream catalogue adds them this
     // list can be removed and values will automatically flow to S-52 CSPs.
     "CATAIR",

@@ -3,13 +3,13 @@ plugins {
 }
 
 /*
- * S-52 v0.5.2 moved the symbol/color catalogue used by this project into
+ * S-52 v0.5.3 supplies the symbol/color catalogue used by this project through
  * Kotlin/Maven/composite-build artifacts.  The browser demo must not download
  * or require the old OpenCPN rastersymbols-*.png sprite atlas.
  */
 val checkExternalS52Resources by tasks.registering {
     group = "verification"
-    description = "Checks that S-52 v0.5.2 is used without legacy raster atlas runtime downloads."
+    description = "Checks that S-52 v0.5.3 is used without legacy raster atlas runtime downloads."
     doLast {
         logger.lifecycle("S-52 ${project.property("s52.version")} symbology is supplied by Kotlin artifacts; no runtime raster atlas download is required.")
     }
