@@ -170,6 +170,10 @@ class ChartInteractionController(
     fun handleWheel(event: ChartWheelEvent) {
         val direction = dominantScrollDirection(event.deltaX, event.deltaY)
         listener.onUserEvent(ChartUserEvent.Scroll(direction, ScreenDelta(event.deltaX, event.deltaY), event.position))
+        handleWheelZoom(event)
+    }
+
+    fun handleWheelZoom(event: ChartWheelEvent) {
         if (abs(event.deltaY) > abs(event.deltaX)) {
             val factor = if (event.deltaY < 0.0) 1.2 else 1.0 / 1.2
             listener.onUserEvent(ChartUserEvent.Zoom(factor, event.position))

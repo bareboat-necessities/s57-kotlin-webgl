@@ -6,13 +6,21 @@ import org.w3c.dom.events.Event
 
 /** Browser pointer/wheel binding. It emits library-level events but does not implement chartplotter UX. */
 class BrowserChartInput(
-    private val controller: ChartInteractionController
+    private val controller: ChartInteractionController,
+    private val requireFocusForWheelZoom: Boolean = false,
+    private val wheelZoomOnly: Boolean = false,
+    private val invertWheelZoom: Boolean = false
 ) {
+    private var wheelZoomArmed: Boolean = false
+
     fun attach(canvasId: String): Boolean {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement ?: return false
         canvas.setAttribute("style", listOfNotNull(canvas.getAttribute("style"), "touch-action: none").joinToString("; "))
+        canvas.setAttribute("tabindex", "0")
 
         canvas.addEventListener("pointerdown", { raw: Event ->
+            wheelZoomArmed = true
+            focusCanvas(canvas)
             capturePointer(canvas, pointerId(raw))
             controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Down, canvas))
             raw.preventDefault()
@@ -29,9 +37,19 @@ class BrowserChartInput(
             controller.handlePointer(toChartPointerEvent(raw, PointerPhase.Cancel, canvas))
             raw.preventDefault()
         })
+        canvas.addEventListener("blur", {
+            wheelZoomArmed = false
+        })
         canvas.addEventListener("wheel", { raw: Event ->
+            if (requireFocusForWheelZoom && (!wheelZoomArmed || document.activeElement != canvas)) {
+                return@addEventListener
+            }
             val point = canvasPoint(raw, canvas)
-            controller.handleWheel(ChartWheelEvent(point, eventNumber(raw, "deltaX"), eventNumber(raw, "deltaY"), eventNumber(raw, "timeStamp")))
+            val deltaX = eventNumber(raw, "deltaX")
+            val rawDeltaY = eventNumber(raw, "deltaY")
+            val deltaY = if (invertWheelZoom) -rawDeltaY else rawDeltaY
+            val wheelEvent = ChartWheelEvent(point, deltaX, deltaY, eventNumber(raw, "timeStamp"))
+            if (wheelZoomOnly) controller.handleWheelZoom(wheelEvent) else controller.handleWheel(wheelEvent)
             raw.preventDefault()
         })
         return true
@@ -68,7 +86,19 @@ class BrowserChartInput(
     private fun pointerId(event: Event): Int = eventInteger(event, "pointerId")
 
     private fun capturePointer(canvas: HTMLCanvasElement, pointerId: Int) {
-        canvas.asDynamic().setPointerCapture(pointerId)
+        try {
+            canvas.asDynamic().setPointerCapture(pointerId)
+        } catch (_: Throwable) {
+            // Some browsers throw for synthetic/mouse events that do not carry a capturable pointer id.
+        }
+    }
+
+    private fun focusCanvas(canvas: HTMLCanvasElement) {
+        try {
+            canvas.asDynamic().focus()
+        } catch (_: Throwable) {
+            // Focusing is a UX helper, not required for pointer handling.
+        }
     }
 
     private fun eventString(event: Event, propertyName: String): String {

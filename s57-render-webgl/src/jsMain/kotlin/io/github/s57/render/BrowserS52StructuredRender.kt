@@ -101,8 +101,21 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         north = frame.request.bounds.maxLat
     )
     val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
+    val displayPlan = buildBrowserS52DisplayCommandPlan(
+        commands = portrayed.commands,
+        presLib = bridge.presLib,
+        viewport = viewport,
+        widthPx = frame.request.widthPx,
+        heightPx = frame.request.heightPx,
+        scaleDenominator = frame.request.scaleDenominator
+    )
+    val displayDiagnostics = displayPlan.diagnostics(frame.request.cellId)
     window.asDynamic().s57S52ResourceRenderReady = false
     window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
+    window.asDynamic().s57S52DisplayCommandCount = displayPlan.commands.size
+    window.asDynamic().s57S52SuppressedRasterAreaPatternCount = displayPlan.suppressedRasterAreaPatternCount
+    window.asDynamic().s57S52SuppressedTextCount = displayPlan.suppressedTextCount
+    window.asDynamic().s57S52SuppressedSoundingCount = displayPlan.suppressedSoundingCount
     window.asDynamic().s57S52InitialDrawCalls = 0
     window.asDynamic().s57S52LastResourceDrawCalls = 0
 
@@ -122,16 +135,24 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 }
             }
         }
-        cachedRenderer.commands = portrayed.commands
+        cachedRenderer.commands = displayPlan.commands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
-        val stats = cachedRenderer.renderer.render(portrayed.commands, portrayed.settings, viewport)
+        val stats = cachedRenderer.renderer.render(displayPlan.commands, portrayed.settings, viewport)
         window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
-        val s52 = portrayed.toSummary(drawCallCount = stats.drawCalls)
+        val s52Base = portrayed.toSummary(drawCallCount = stats.drawCalls)
+        val s52 = s52Base.copy(
+            diagnostics = s52Base.diagnostics + displayDiagnostics,
+            diagnosticCount = s52Base.diagnostics.size + displayDiagnostics.size
+        )
         val message = "S-52 WebGL rendered profile=" + portrayed.profile +
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
+            " displayCommands=" + displayPlan.commands.size +
             " rasterCommands=" + portrayed.rasterCommandCount +
+            " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
+            " suppressedText=" + displayPlan.suppressedTextCount +
+            " suppressedSoundings=" + displayPlan.suppressedSoundingCount +
             " drawCalls=" + stats.drawCalls +
             " symbols=" + stats.symbolCount +
             " lines=" + stats.lineCount +
@@ -179,7 +200,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
         val fallback = renderS52CanvasCommandFallback(
             canvasId = canvasId,
             frame = frame,
-            portrayed = portrayed,
+            portrayed = portrayed.copy(commands = displayPlan.commands, diagnostics = portrayed.diagnostics + displayDiagnostics),
             viewport = viewport,
             presLib = bridge.presLib,
             webglReason = webglReason

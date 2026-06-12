@@ -15,6 +15,7 @@
     button:hover { background: #eef4ff; }
     .buttonRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     canvas { width: 100%; max-width: 1100px; height: 620px; background: #dceefa; border-radius: 12px; border: 1px solid #334; }
+    canvas:focus { outline: 3px solid #2563eb; outline-offset: 2px; }
     pre { white-space: pre-wrap; font-size: 13px; line-height: 1.35; }
     .warning { color: #9a3412; font-weight: 600; }
     .events { white-space: pre-wrap; font-family: monospace; background: #f6f8fa; padding: 12px; border: 1px solid #ddd; }
@@ -67,7 +68,8 @@
       <pre id="events" class="events">No interaction yet.</pre>
     </section>
     <section class="panel">
-      <canvas id="chartCanvas" width="1280" height="720"></canvas>
+      <canvas id="chartCanvas" width="1280" height="720" tabindex="0" title="Click the chart once to enable mouse-wheel zoom."></canvas>
+      <p class="hint">Click the chart once to arm mouse-wheel zoom. Wheel events are ignored until the chart has focus.</p>
     </section>
   </div>
   <script>

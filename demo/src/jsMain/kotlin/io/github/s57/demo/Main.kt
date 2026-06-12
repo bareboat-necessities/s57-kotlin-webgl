@@ -128,7 +128,8 @@ fun main() {
             is ChartCanvasEvent.StatusChanged -> Unit
         }
     }
-    BrowserChartInput(ChartInteractionController(listener = object : ChartInteractionListener {
+    BrowserChartInput(
+        controller = ChartInteractionController(listener = object : ChartInteractionListener {
         override fun onUserEvent(event: ChartUserEvent) {
             when (event) {
                 is ChartUserEvent.ClickObject -> chartCanvas.dispatch(ChartCanvasCommand.Press(event.point))
@@ -150,7 +151,11 @@ fun main() {
                 else -> events?.textContent = event.toString()
             }
         }
-    })).attach("chartCanvas")
+    }),
+        requireFocusForWheelZoom = true,
+        wheelZoomOnly = true,
+        invertWheelZoom = true
+    ).attach("chartCanvas")
     val chartCache = BrowserChartIndexedDbCache()
     var imports = emptyList<S57EngineImportResult>()
     var failures = emptyList<String>()
