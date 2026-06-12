@@ -78,11 +78,14 @@ class BrowserS52DisplayCommandFilterTest {
 
 
     @Test
-    fun rewritesRasterBackedAreaPatternsToLineFallback() {
+    fun suppressesRasterBackedAreaPatternsWithoutChangingAreaFill() {
         val rasterPattern = presLib.patterns.all().first { it.bitmap != null }
         val plan = buildBrowserS52DisplayCommandPlan(
-            commands = listOf(areaPatternCommand(patternName = rasterPattern.name)),
-            sourceFeatures = listOf(feature(objectClass = "SBDARE", attributes = emptyMap(), geometry = s57Polygon())),
+            commands = listOf(
+                areaFillCommand(featureId = 3L, colorToken = "DEPVS"),
+                areaPatternCommand(featureId = 3L, patternName = rasterPattern.name)
+            ),
+            sourceFeatures = listOf(feature(id = 3L, objectClass = "DEPARE", attributes = emptyMap(), geometry = s57Polygon())),
             presLib = presLib,
             viewport = viewport,
             widthPx = 800,
@@ -90,16 +93,15 @@ class BrowserS52DisplayCommandFilterTest {
             scaleDenominator = 40_000.0
         )
 
-        val command = plan.commands.single() as S52DrawCommand.AreaPattern
         assertEquals(1, plan.suppressedRasterAreaPatternCount)
-        assertTrue(command.patternName.startsWith("__S57_VECTOR_LINE__"))
-        assertEquals(rasterPattern.colorRefs.firstOrNull() ?: "CHMGD", command.backgroundColorToken)
+        assertEquals(1, plan.commands.size)
+        assertEquals("DEPVS", (plan.commands.single() as S52DrawCommand.AreaFill).colorToken)
     }
 
     @Test
-    fun addsLandFillBehindLandRegionPatternWhenPortrayalDidNotFillIt() {
+    fun doesNotAddSyntheticLandFillBehindPatternOnlyLandRegion() {
         val plan = buildBrowserS52DisplayCommandPlan(
-            commands = listOf(areaPatternCommand(featureId = 9L, patternName = "MARSHES1")),
+            commands = listOf(areaPatternCommand(featureId = 9L, patternName = "VECTOR_ONLY_PATTERN")),
             sourceFeatures = listOf(feature(id = 9L, objectClass = "LNDRGN", attributes = emptyMap(), geometry = s57Polygon())),
             presLib = presLib,
             viewport = viewport,
@@ -108,9 +110,8 @@ class BrowserS52DisplayCommandFilterTest {
             scaleDenominator = 40_000.0
         )
 
-        assertTrue(plan.commands.first() is S52DrawCommand.AreaFill)
-        assertEquals("LANDA", (plan.commands.first() as S52DrawCommand.AreaFill).colorToken)
-        assertTrue(plan.commands.any { it is S52DrawCommand.AreaPattern })
+        assertEquals(1, plan.commands.size)
+        assertTrue(plan.commands.single() is S52DrawCommand.AreaPattern)
     }
 
     private fun textCommand(
@@ -124,6 +125,19 @@ class BrowserS52DisplayCommandFilterTest {
         rawArgs = rawArgs,
         textKind = InstructionKind.TE,
         colorToken = "CHBLK",
+        priority = 1,
+        viewingGroup = 1,
+        category = DisplayCategory.Standard,
+        overRadar = true
+    )
+
+    private fun areaFillCommand(
+        featureId: Long = 1L,
+        colorToken: String
+    ): S52DrawCommand.AreaFill = S52DrawCommand.AreaFill(
+        featureId = featureId,
+        geometry = encPolygon(),
+        colorToken = colorToken,
         priority = 1,
         viewingGroup = 1,
         category = DisplayCategory.Standard,
