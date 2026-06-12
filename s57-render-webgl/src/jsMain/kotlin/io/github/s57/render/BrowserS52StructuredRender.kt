@@ -32,6 +32,8 @@ private class CachedWebGlS52Renderer(
     private var renderInProgress: Boolean = false
     private var pendingResourceRender: Boolean = false
     private var resourceRenderScheduled: Boolean = false
+    var textCommands: List<S52DrawCommand> = emptyList()
+    private var textPostpass: BrowserS52WebGlTextPostpass? = null
     private var suppressedReentrantResourceCallbacks: Int = 0
 
     fun renderCurrentFrame(): io.github.s52.render.webgl.RenderStats {
@@ -59,7 +61,19 @@ private class CachedWebGlS52Renderer(
     private fun renderWebGlOnly(
         activeSettings: MarinerSettings,
         activeViewport: RenderViewport
-    ): RenderStats = renderer.render(commands, activeSettings, activeViewport)
+    ): RenderStats {
+        val baseStats = renderer.render(commands, activeSettings, activeViewport)
+        val textStats = textPostpass?.render(textCommands, activeSettings, activeViewport) ?: BrowserS52TextPostpassStats()
+        return baseStats.copy(
+            textCount = baseStats.textCount + textStats.textCount,
+            soundingCount = baseStats.soundingCount + textStats.soundingCount,
+            drawCalls = baseStats.drawCalls + textStats.drawCalls
+        )
+    }
+
+    fun ensureTextPostpass(canvas: HTMLCanvasElement, presLib: io.github.s52.preslib.PresLibPack) {
+        if (textPostpass == null) textPostpass = BrowserS52WebGlTextPostpass(canvas, presLib)
+    }
 
     private fun scheduleResourceRenderIfNeeded() {
         if (!pendingResourceRender || resourceRenderScheduled) return
@@ -155,6 +169,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     val linearOrAreaFeatureCount = frame.projectedLinearOrAreaFeatureCount()
     val displayPlan = buildBrowserS52DisplayCommandPlan(
         commands = portrayed.commands,
+        sourceFeatures = sourceFeatures,
         presLib = bridge.presLib,
         viewport = viewport,
         widthPx = frame.request.widthPx,
@@ -165,6 +180,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     window.asDynamic().s57S52ResourceRenderReady = false
     window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
     window.asDynamic().s57S52DisplayCommandCount = displayPlan.commands.size
+    window.asDynamic().s57S52WebGlTextCommandCount = displayPlan.textCommands.size
     window.asDynamic().s57S52SuppressedRasterAreaPatternCount = displayPlan.suppressedRasterAreaPatternCount
     window.asDynamic().s57S52SuppressedDuplicatePointSymbolCount = displayPlan.suppressedDuplicatePointSymbolCount
     window.asDynamic().s57S52InitialDrawCalls = 0
@@ -185,9 +201,12 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
                 entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
                     entry.renderReadyResources()
                 }
+                entry.ensureTextPostpass(canvas, bridge.presLib)
             }
         }
+        cachedRenderer.ensureTextPostpass(canvas, bridge.presLib)
         cachedRenderer.commands = displayPlan.commands
+        cachedRenderer.textCommands = displayPlan.textCommands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
         val stats = cachedRenderer.renderCurrentFrame()
@@ -201,6 +220,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " encFeatures=" + portrayed.featureCount +
             " commands=" + portrayed.commands.size +
             " webGlCommands=" + displayPlan.commands.size +
+            " webGlTextCommands=" + displayPlan.textCommands.size +
             " rasterCommands=" + portrayed.rasterCommandCount +
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
             " suppressedDuplicatePointSymbols=" + displayPlan.suppressedDuplicatePointSymbolCount +
