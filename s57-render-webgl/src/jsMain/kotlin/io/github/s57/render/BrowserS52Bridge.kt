@@ -6,6 +6,7 @@ import io.github.s52.catalog.PrimitiveType
 import io.github.s52.catalog.S57Attribute
 import io.github.s52.catalog.S57AttributeValueKind
 import io.github.s52.catalog.S57ObjectClass
+import io.github.s52.core.draw.DisplayPrioritySorter
 import io.github.s52.core.draw.S52DrawCommand
 import io.github.s52.core.geometry.Coordinate
 import io.github.s52.core.geometry.EncGeometry
@@ -49,6 +50,10 @@ internal class BrowserS52Bridge(
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
         val commands = portrayResiliently(encFeatures, settings, context, diagnostics)
+            // The resilient path can concatenate independently portrayed chunks;
+            // restore one global S-52 painter order before WebGL draws areas,
+            // contours, symbols, and text.
+            .sortedWith(DisplayPrioritySorter)
         val rasterCommandCount = commands.count { it.usesRasterPresentationAsset() }
         return BrowserS52PortrayalResult(profile, encFeatures.size, commands, rasterCommandCount, diagnostics, settings)
     }

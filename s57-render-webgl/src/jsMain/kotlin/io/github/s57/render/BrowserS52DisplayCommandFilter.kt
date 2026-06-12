@@ -45,19 +45,10 @@ internal fun buildBrowserS52DisplayCommandPlan(
     val bestPointSymbols = selectBestPointSymbolByFeature(commands)
     val emittedPointSymbolFeatureIds = mutableSetOf<Long>()
     val webGlCommands = ArrayList<S52DrawCommand>(commands.size)
-    var suppressedRasterAreaPatterns = 0
     var suppressedDuplicatePointSymbols = 0
 
     for (command in commands) {
         when (command) {
-            is S52DrawCommand.AreaPattern -> {
-                // Do not draw tiled pattern rasters in the browser demo until the
-                // upstream S-52 WebGL renderer can clip and compose them without
-                // visible rounded tile frames.  This is still a single WebGL path:
-                // no Canvas2D, no decoded-geometry fallback, and no secondary
-                // overlay renderer are invoked.
-                suppressedRasterAreaPatterns++
-            }
             is S52DrawCommand.PointSymbol -> {
                 val best = bestPointSymbols[command.featureId]
                 if (best != null && best == command && emittedPointSymbolFeatureIds.add(command.featureId)) {
@@ -73,7 +64,7 @@ internal fun buildBrowserS52DisplayCommandPlan(
     return BrowserS52DisplayCommandPlan(
         commands = webGlCommands,
         originalCommandCount = commands.size,
-        suppressedRasterAreaPatternCount = suppressedRasterAreaPatterns,
+        suppressedRasterAreaPatternCount = 0,
         suppressedDuplicatePointSymbolCount = suppressedDuplicatePointSymbols
     )
 }
