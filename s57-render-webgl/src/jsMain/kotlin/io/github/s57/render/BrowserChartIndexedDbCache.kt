@@ -31,7 +31,7 @@ class BrowserChartIndexedDbCache(
                             val entries = mutableListOf<BrowserChartCacheEntry>()
                             val length = (rows.length as Number).toInt()
                             for (index in 0 until length) {
-                                val entry = rows.asDynamic()[index].toCacheEntryOrNull()
+                                val entry = toCacheEntryOrNull(rows.asDynamic()[index])
                                 if (entry != null) entries.add(entry)
                             }
                             callback(Result.success(entries))
@@ -115,8 +115,8 @@ class BrowserChartIndexedDbCache(
                             if (row == null) {
                                 callback(Result.success(null))
                             } else {
-                                val entry = row.toCacheEntryOrNull()
-                                val payloads = row.toPayloadList()
+                                val entry = toCacheEntryOrNull(row)
+                                val payloads = toPayloadList(row)
                                 callback(Result.success(if (entry == null || payloads.isEmpty()) null else CachedChartPayload(entry, payloads)))
                             }
                             null
@@ -144,7 +144,8 @@ class BrowserChartIndexedDbCache(
                         val request = store.get(cacheKey)
                         request.onsuccess = {
                             val row = request.result
-                            callback(Result.success(row?.asDynamic()?.dataset.toS57DatasetOrNull()))
+                            val datasetRow: Any? = if (row == null) null else row.asDynamic().dataset
+                            callback(Result.success(toS57DatasetOrNull(datasetRow)))
                             null
                         }
                         request.onerror = {
@@ -244,28 +245,36 @@ data class CachedChartPayload(
     val bytes: ByteArray get() = payloads.first()
 }
 
-private fun Any?.toCacheEntryOrNull(): BrowserChartCacheEntry? = try {
-    val row = this.asDynamic()
-    BrowserChartCacheEntry(
-        cacheKey = row.cacheKey as String,
-        fileName = row.fileName as String,
-        byteCount = (row.byteCount as Number).toInt(),
-        cellId = row.cellId as String,
-        featureCount = (row.featureCount as Number).toInt(),
-        cachedAtMillis = (row.cachedAtMillis as Number).toDouble()
-    )
+private fun toCacheEntryOrNull(value: Any?): BrowserChartCacheEntry? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        BrowserChartCacheEntry(
+            cacheKey = row.cacheKey as String,
+            fileName = row.fileName as String,
+            byteCount = (row.byteCount as Number).toInt(),
+            cellId = row.cellId as String,
+            featureCount = (row.featureCount as Number).toInt(),
+            cachedAtMillis = (row.cachedAtMillis as Number).toDouble()
+        )
+    }
 } catch (_: Throwable) {
     null
 }
 
-private fun Any?.toPayloadList(): List<ByteArray> = try {
-    val row = this.asDynamic()
-    val payloads = row.payloads
-    if (payloads != null) {
-        val length = (payloads.length as Number).toInt()
-        (0 until length).mapNotNull { index -> payloads[index]?.unsafeCast<Int8Array>()?.toByteArray() }
+private fun toPayloadList(value: Any?): List<ByteArray> = try {
+    if (value == null) {
+        emptyList()
     } else {
-        listOf(row.payload.unsafeCast<Int8Array>().toByteArray())
+        val row = value.asDynamic()
+        val payloads = row.payloads
+        if (payloads != null) {
+            val length = (payloads.length as Number).toInt()
+            (0 until length).mapNotNull { index -> payloads[index]?.unsafeCast<Int8Array>()?.toByteArray() }
+        } else {
+            listOf(row.payload.unsafeCast<Int8Array>().toByteArray())
+        }
     }
 } catch (_: Throwable) {
     emptyList()
@@ -372,125 +381,177 @@ private fun GeoPoint.toIndexedDbRowPoint(): dynamic {
     return row
 }
 
-private fun Any?.toS57DatasetOrNull(): S57Dataset? = try {
-    val row = this.asDynamic()
-    val summary = row.summary.toS57CellSummaryOrNull()
-    if (summary == null) {
+private fun toS57DatasetOrNull(value: Any?): S57Dataset? = try {
+    if (value == null) {
         null
     } else {
-        val featuresRow = row.features
-        val length = (featuresRow.length as Number).toInt()
-        val features = (0 until length).mapNotNull { index -> featuresRow[index].toS57FeatureOrNull() }
-        val featureCount = summary.featureCount.takeIf { count -> count > 0 } ?: features.size
-        S57Dataset(summary = summary.copy(featureCount = featureCount), features = features)
-    }
-} catch (_: Throwable) {
-    null
-}
-
-private fun Any?.toS57CellSummaryOrNull(): S57CellSummary? = try {
-    val row = this.asDynamic()
-    S57CellSummary(
-        cellId = row.cellId as String,
-        name = row.name as? String ?: (row.cellId as String),
-        edition = (row.edition as? Number)?.toInt(),
-        updateNumber = (row.updateNumber as? Number)?.toInt(),
-        bounds = row.bounds.toGeoBoundsOrNull(),
-        featureCount = (row.featureCount as? Number)?.toInt() ?: 0
-    )
-} catch (_: Throwable) {
-    null
-}
-
-private fun Any?.toGeoBoundsOrNull(): GeoBounds? = try {
-    val row = this.asDynamic()
-    GeoBounds(
-        minLon = (row.minLon as Number).toDouble(),
-        minLat = (row.minLat as Number).toDouble(),
-        maxLon = (row.maxLon as Number).toDouble(),
-        maxLat = (row.maxLat as Number).toDouble()
-    )
-} catch (_: Throwable) {
-    null
-}
-
-private fun Any?.toS57FeatureOrNull(): S57Feature? = try {
-    val row = this.asDynamic()
-    val attrs = linkedMapOf<String, S57Value>()
-    val attrRows = row.attributes
-    val attrLength = (attrRows.length as Number).toInt()
-    for (index in 0 until attrLength) {
-        val attr = attrRows[index]
-        val key = attr.key as? String
-        val value = attr.value.toS57ValueOrNull()
-        if (key != null && value != null) attrs[key] = value
-    }
-    S57Feature(
-        id = (row.id as? String)?.toLongOrNull() ?: (row.id as Number).toLong(),
-        objectClass = row.objectClass as String,
-        attributes = attrs,
-        geometry = row.geometry.toS57GeometryOrNull() ?: S57Geometry.Empty
-    )
-} catch (_: Throwable) {
-    null
-}
-
-private fun Any?.toS57ValueOrNull(): S57Value? = try {
-    val row = this.asDynamic()
-    when (row.type as? String) {
-        "text" -> S57Value.Text(row.value as? String ?: "")
-        "integer" -> S57Value.Integer((row.value as Number).toInt())
-        "decimal" -> S57Value.Decimal((row.value as Number).toDouble())
-        "list" -> {
-            val valuesRow = row.values
-            val length = (valuesRow.length as Number).toInt()
-            S57Value.ListValue((0 until length).mapNotNull { index -> valuesRow[index].toS57ValueOrNull() })
+        val row = value.asDynamic()
+        val summary = toS57CellSummaryOrNull(row.summary)
+        if (summary == null) {
+            null
+        } else {
+            val featuresRow = row.features
+            if (featuresRow == null) {
+                null
+            } else {
+                val length = (featuresRow.length as Number).toInt()
+                val features = (0 until length).mapNotNull { index -> toS57FeatureOrNull(featuresRow[index]) }
+                val featureCount = summary.featureCount.takeIf { count -> count > 0 } ?: features.size
+                S57Dataset(summary = summary.copy(featureCount = featureCount), features = features)
+            }
         }
-        "empty" -> S57Value.Empty
-        else -> null
     }
 } catch (_: Throwable) {
     null
 }
 
-private fun Any?.toS57GeometryOrNull(): S57Geometry? = try {
-    val row = this.asDynamic()
-    when (row.type as? String) {
-        "empty" -> S57Geometry.Empty
-        "point" -> row.coordinate.toGeoPointOrNull()?.let { coordinate -> S57Geometry.Point(coordinate) }
-        "multipoint" -> S57Geometry.MultiPoint(row.points.toGeoPointList())
-        "linestring" -> S57Geometry.LineString(row.points.toGeoPointList())
-        "polygon" -> S57Geometry.Polygon(row.rings.toGeoPointRings())
-        "multipolygon" -> {
-            val polygonsRow = row.polygons
-            val length = (polygonsRow.length as Number).toInt()
-            S57Geometry.MultiPolygon((0 until length).mapNotNull { index -> polygonsRow[index].toS57GeometryOrNull() as? S57Geometry.Polygon })
+private fun toS57CellSummaryOrNull(value: Any?): S57CellSummary? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        val cellId = row.cellId as? String
+        if (cellId == null) {
+            null
+        } else {
+            S57CellSummary(
+                cellId = cellId,
+                name = row.name as? String ?: cellId,
+                edition = (row.edition as? Number)?.toInt(),
+                updateNumber = (row.updateNumber as? Number)?.toInt(),
+                bounds = toGeoBoundsOrNull(row.bounds),
+                featureCount = (row.featureCount as? Number)?.toInt() ?: 0
+            )
         }
-        else -> null
     }
 } catch (_: Throwable) {
     null
 }
 
-private fun Any?.toGeoPointOrNull(): GeoPoint? = try {
-    val row = this.asDynamic()
-    GeoPoint((row.lon as Number).toDouble(), (row.lat as Number).toDouble())
+private fun toGeoBoundsOrNull(value: Any?): GeoBounds? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        GeoBounds(
+            minLon = (row.minLon as Number).toDouble(),
+            minLat = (row.minLat as Number).toDouble(),
+            maxLon = (row.maxLon as Number).toDouble(),
+            maxLat = (row.maxLat as Number).toDouble()
+        )
+    }
 } catch (_: Throwable) {
     null
 }
 
-private fun Any?.toGeoPointList(): List<GeoPoint> = try {
-    val rows = this.asDynamic()
-    val length = (rows.length as Number).toInt()
-    (0 until length).mapNotNull { index -> rows[index].toGeoPointOrNull() }
+private fun toS57FeatureOrNull(value: Any?): S57Feature? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        val attrs = linkedMapOf<String, S57Value>()
+        val attrRows = row.attributes
+        if (attrRows != null) {
+            val attrLength = (attrRows.length as Number).toInt()
+            for (index in 0 until attrLength) {
+                val attr = attrRows[index]
+                val key = attr.key as? String
+                val attrValue = toS57ValueOrNull(attr.value)
+                if (key != null && attrValue != null) attrs[key] = attrValue
+            }
+        }
+        val id = (row.id as? String)?.toLongOrNull() ?: (row.id as? Number)?.toLong()
+        if (id == null) {
+            null
+        } else {
+            S57Feature(
+                id = id,
+                objectClass = row.objectClass as String,
+                attributes = attrs,
+                geometry = toS57GeometryOrNull(row.geometry) ?: S57Geometry.Empty
+            )
+        }
+    }
+} catch (_: Throwable) {
+    null
+}
+
+private fun toS57ValueOrNull(value: Any?): S57Value? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        when (row.type as? String) {
+            "text" -> S57Value.Text(row.value as? String ?: "")
+            "integer" -> S57Value.Integer((row.value as Number).toInt())
+            "decimal" -> S57Value.Decimal((row.value as Number).toDouble())
+            "list" -> {
+                val valuesRow = row.values
+                val length = (valuesRow.length as Number).toInt()
+                S57Value.ListValue((0 until length).mapNotNull { index -> toS57ValueOrNull(valuesRow[index]) })
+            }
+            "empty" -> S57Value.Empty
+            else -> null
+        }
+    }
+} catch (_: Throwable) {
+    null
+}
+
+private fun toS57GeometryOrNull(value: Any?): S57Geometry? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        when (row.type as? String) {
+            "empty" -> S57Geometry.Empty
+            "point" -> toGeoPointOrNull(row.coordinate)?.let { coordinate -> S57Geometry.Point(coordinate) }
+            "multipoint" -> S57Geometry.MultiPoint(toGeoPointList(row.points))
+            "linestring" -> S57Geometry.LineString(toGeoPointList(row.points))
+            "polygon" -> S57Geometry.Polygon(toGeoPointRings(row.rings))
+            "multipolygon" -> {
+                val polygonsRow = row.polygons
+                val length = (polygonsRow.length as Number).toInt()
+                S57Geometry.MultiPolygon((0 until length).mapNotNull { index -> toS57GeometryOrNull(polygonsRow[index]) as? S57Geometry.Polygon })
+            }
+            else -> null
+        }
+    }
+} catch (_: Throwable) {
+    null
+}
+
+private fun toGeoPointOrNull(value: Any?): GeoPoint? = try {
+    if (value == null) {
+        null
+    } else {
+        val row = value.asDynamic()
+        GeoPoint((row.lon as Number).toDouble(), (row.lat as Number).toDouble())
+    }
+} catch (_: Throwable) {
+    null
+}
+
+private fun toGeoPointList(value: Any?): List<GeoPoint> = try {
+    if (value == null) {
+        emptyList()
+    } else {
+        val rows = value.asDynamic()
+        val length = (rows.length as Number).toInt()
+        (0 until length).mapNotNull { index -> toGeoPointOrNull(rows[index]) }
+    }
 } catch (_: Throwable) {
     emptyList()
 }
 
-private fun Any?.toGeoPointRings(): List<List<GeoPoint>> = try {
-    val rows = this.asDynamic()
-    val length = (rows.length as Number).toInt()
-    (0 until length).map { index -> rows[index].toGeoPointList() }
+private fun toGeoPointRings(value: Any?): List<List<GeoPoint>> = try {
+    if (value == null) {
+        emptyList()
+    } else {
+        val rows = value.asDynamic()
+        val length = (rows.length as Number).toInt()
+        (0 until length).map { index -> toGeoPointList(rows[index]) }
+    }
 } catch (_: Throwable) {
     emptyList()
 }
