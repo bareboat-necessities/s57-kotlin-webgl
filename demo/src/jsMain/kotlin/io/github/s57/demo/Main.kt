@@ -46,6 +46,14 @@ import org.khronos.webgl.ArrayBuffer
 import org.w3c.files.File
 import kotlin.math.roundToInt
 
+private fun setPhase26ReportGlobals(ready: Boolean, json: String) {
+    js("""
+        window.s57Phase26RenderReady = ready;
+        window.s57Phase26LatestReportJson = json;
+        window.s57Phase26ReportJson = json;
+    """)
+}
+
 fun main() {
     val fileInput = document.getElementById("fileInput") as HTMLInputElement
     val renderButton = document.getElementById("renderButton") as HTMLButtonElement
@@ -141,12 +149,12 @@ fun main() {
 
     fun publishPhase26Report(report: RenderPipelineDiagnosticReport) {
         latestPipelineReport = report
-        val dynamicWindow = window.asDynamic()
-        dynamicWindow.s57Phase26RenderReady = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
-        dynamicWindow.s57Phase26LatestReportJson = latestPipelineReport.toJson()
-        // Keep the CI/report handoff as a plain string property.  Do not expose
-        // Kotlin function objects, and do not install wrapper functions from here:
-        // Playwright should read s57Phase26LatestReportJson directly.
+        val ready = report.diagnostics.isNotEmpty() || report.counters.isNotEmpty()
+        val json = latestPipelineReport.toJson()
+        setPhase26ReportGlobals(ready, json)
+        // Keep the CI/report handoff as plain string/boolean properties.  Do
+        // not expose Kotlin function objects here; Playwright reads
+        // s57Phase26LatestReportJson directly.
     }
 
     fun downloadUrl(fileName: String, url: String) {
@@ -259,7 +267,7 @@ fun main() {
         }
     }
 
-    fun phase26SnapshotMode(): Boolean = window.asDynamic().s57Phase26SnapshotMode == true
+    fun phase26SnapshotMode(): Boolean = js("window.s57Phase26SnapshotMode === true").unsafeCast<Boolean>()
 
     fun snapshotBounds(cell: S57CellSummary, fraction: Double): GeoBounds? {
         val bounds = cell.bounds ?: return null
