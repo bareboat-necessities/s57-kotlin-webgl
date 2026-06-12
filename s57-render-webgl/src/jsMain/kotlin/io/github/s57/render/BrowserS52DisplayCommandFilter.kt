@@ -59,6 +59,7 @@ internal fun buildBrowserS52DisplayCommandPlan(
     val filtered = ArrayList<S52DrawCommand>(commands.size)
     val textCommands = ArrayList<S52DrawCommand>()
     var suppressedDuplicatePointSymbols = 0
+    var suppressedRasterAreaPatterns = 0
 
     for (command in commands) {
         when (command) {
@@ -72,21 +73,83 @@ internal fun buildBrowserS52DisplayCommandPlan(
             }
             is S52DrawCommand.Text -> command.resolveDisplayLabel(featureById)?.let { textCommands += it }
             is S52DrawCommand.Sounding -> textCommands += command
+            is S52DrawCommand.AreaPattern -> {
+                val vectorLinePattern = command.withBrowserVectorLinePatternFallback(presLib)
+                if (vectorLinePattern != command) suppressedRasterAreaPatterns++
+                filtered += vectorLinePattern
+            }
             else -> filtered += command
         }
     }
 
-    val ordered = filtered.sortedWith(StrictBrowserS52PainterOrder(objectClassByFeatureId))
+    val landBacked = filtered.withMissingLandBackedAreaFills(objectClassByFeatureId)
+    val ordered = landBacked.sortedWith(StrictBrowserS52PainterOrder(objectClassByFeatureId))
     val reorderedAreaFills = countReorderedAreaFills(filtered, ordered)
     return BrowserS52DisplayCommandPlan(
         commands = ordered,
         textCommands = textCommands,
         originalCommandCount = commands.size,
-        suppressedRasterAreaPatternCount = 0,
+        suppressedRasterAreaPatternCount = suppressedRasterAreaPatterns,
         suppressedDuplicatePointSymbolCount = suppressedDuplicatePointSymbols,
         reorderedAreaFillCount = reorderedAreaFills
     )
 }
+
+
+private fun S52DrawCommand.AreaPattern.withBrowserVectorLinePatternFallback(presLib: PresLibPack): S52DrawCommand.AreaPattern {
+    val pattern = presLib.patterns.find(patternName) ?: return this
+    if (pattern.bitmap == null) return this
+
+    // The browser renderer in S-52 0.5.4 prefers OpenCPN raster pattern tiles
+    // over HPGL/vector pattern strokes.  In NOAA snapshots those raster tiles are
+    // visible as repeated dirty-orange rounded sprite boxes near shore.  Force the
+    // renderer down its line-pattern fallback path until upstream can choose the
+    // vector pattern before the raster atlas for area fills.
+    val lineColorToken = pattern.colorRefs.firstOrNull() ?: backgroundColorToken ?: "CHMGD"
+    return copy(
+        patternName = BrowserVectorLinePatternFallbackPrefix + patternName,
+        backgroundColorToken = lineColorToken
+    )
+}
+
+private fun List<S52DrawCommand>.withMissingLandBackedAreaFills(objectClassByFeatureId: Map<Long, String>): List<S52DrawCommand> {
+    val filledFeatureIds = asSequence()
+        .filterIsInstance<S52DrawCommand.AreaFill>()
+        .map { it.featureId.normalizedSourceFeatureId() }
+        .toSet()
+    val syntheticFills = ArrayList<S52DrawCommand.AreaFill>()
+    for (command in this) {
+        val featureId = command.featureId.normalizedSourceFeatureId()
+        if (featureId in filledFeatureIds || syntheticFills.any { it.featureId.normalizedSourceFeatureId() == featureId }) continue
+        val objectClass = objectClassByFeatureId[command.featureId] ?: objectClassByFeatureId[featureId] ?: continue
+        if (!objectClass.isLandBackedAreaClass()) continue
+        if (command.geometry !is EncGeometry.Polygon) continue
+        syntheticFills += S52DrawCommand.AreaFill(
+            featureId = command.featureId,
+            geometry = command.geometry,
+            colorToken = "LANDA",
+            priority = command.priority,
+            viewingGroup = command.viewingGroup,
+            category = command.category,
+            overRadar = command.overRadar
+        )
+    }
+    if (syntheticFills.isEmpty()) return this
+    return syntheticFills + this
+}
+
+private fun Long.normalizedSourceFeatureId(): Long = if (this >= 1000L && this % 1000L != 0L) this / 1000L else this
+
+private fun String.isLandBackedAreaClass(): Boolean = uppercase() in LandBackedAreaClasses
+
+private const val BrowserVectorLinePatternFallbackPrefix: String = "__S57_VECTOR_LINE__"
+
+private val LandBackedAreaClasses = setOf(
+    "BUAARE",
+    "BUISGL",
+    "LNDARE",
+    "LNDRGN"
+)
 
 
 private fun S52DrawCommand.Text.resolveDisplayLabel(featureById: Map<Long, S57Feature>): S52DrawCommand.Text? {

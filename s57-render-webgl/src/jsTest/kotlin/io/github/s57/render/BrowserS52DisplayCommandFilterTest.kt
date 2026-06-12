@@ -12,6 +12,7 @@ import io.github.s57.core.S57Geometry
 import io.github.s57.core.S57Value
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class BrowserS52DisplayCommandFilterTest {
     private val presLib = BrowserS52Bridge().presLib
@@ -75,6 +76,43 @@ class BrowserS52DisplayCommandFilterTest {
         assertEquals("Fl R (2) 4s", label)
     }
 
+
+    @Test
+    fun rewritesRasterBackedAreaPatternsToLineFallback() {
+        val rasterPattern = presLib.patterns.all().first { it.bitmap != null }
+        val plan = buildBrowserS52DisplayCommandPlan(
+            commands = listOf(areaPatternCommand(patternName = rasterPattern.name)),
+            sourceFeatures = listOf(feature(objectClass = "SBDARE", attributes = emptyMap(), geometry = s57Polygon())),
+            presLib = presLib,
+            viewport = viewport,
+            widthPx = 800,
+            heightPx = 600,
+            scaleDenominator = 40_000.0
+        )
+
+        val command = plan.commands.single() as S52DrawCommand.AreaPattern
+        assertEquals(1, plan.suppressedRasterAreaPatternCount)
+        assertTrue(command.patternName.startsWith("__S57_VECTOR_LINE__"))
+        assertEquals(rasterPattern.colorRefs.firstOrNull() ?: "CHMGD", command.backgroundColorToken)
+    }
+
+    @Test
+    fun addsLandFillBehindLandRegionPatternWhenPortrayalDidNotFillIt() {
+        val plan = buildBrowserS52DisplayCommandPlan(
+            commands = listOf(areaPatternCommand(featureId = 9L, patternName = "MARSHES1")),
+            sourceFeatures = listOf(feature(id = 9L, objectClass = "LNDRGN", attributes = emptyMap(), geometry = s57Polygon())),
+            presLib = presLib,
+            viewport = viewport,
+            widthPx = 800,
+            heightPx = 600,
+            scaleDenominator = 40_000.0
+        )
+
+        assertTrue(plan.commands.first() is S52DrawCommand.AreaFill)
+        assertEquals("LANDA", (plan.commands.first() as S52DrawCommand.AreaFill).colorToken)
+        assertTrue(plan.commands.any { it is S52DrawCommand.AreaPattern })
+    }
+
     private fun textCommand(
         featureId: Long = 1L,
         textExpression: String,
@@ -92,14 +130,51 @@ class BrowserS52DisplayCommandFilterTest {
         overRadar = true
     )
 
+
+    private fun areaPatternCommand(
+        featureId: Long = 1L,
+        patternName: String
+    ): S52DrawCommand.AreaPattern = S52DrawCommand.AreaPattern(
+        featureId = featureId,
+        geometry = encPolygon(),
+        patternName = patternName,
+        priority = 1,
+        viewingGroup = 1,
+        category = DisplayCategory.Standard,
+        overRadar = true
+    )
+
+    private fun encPolygon(): EncGeometry.Polygon = EncGeometry.Polygon(
+        outer = listOf(
+            Coordinate(-73.8, 40.2),
+            Coordinate(-73.2, 40.2),
+            Coordinate(-73.2, 40.8),
+            Coordinate(-73.8, 40.8),
+            Coordinate(-73.8, 40.2)
+        )
+    )
+
+    private fun s57Polygon(): S57Geometry.Polygon = S57Geometry.Polygon(
+        rings = listOf(
+            listOf(
+                GeoPoint(-73.8, 40.2),
+                GeoPoint(-73.2, 40.2),
+                GeoPoint(-73.2, 40.8),
+                GeoPoint(-73.8, 40.8),
+                GeoPoint(-73.8, 40.2)
+            )
+        )
+    )
+
     private fun feature(
         id: Long = 1L,
         objectClass: String = "BOYLAT",
-        attributes: Map<String, S57Value>
+        attributes: Map<String, S57Value>,
+        geometry: S57Geometry = S57Geometry.Point(GeoPoint(-73.5, 40.5))
     ): S57Feature = S57Feature(
         id = id,
         objectClass = objectClass,
         attributes = attributes,
-        geometry = S57Geometry.Point(GeoPoint(-73.5, 40.5))
+        geometry = geometry
     )
 }
