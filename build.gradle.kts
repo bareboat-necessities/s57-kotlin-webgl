@@ -46,7 +46,6 @@ registerAudit(
     listOf(
         "README.md",
         "docs/SCOPE.md",
-        "docs/PHASES.md",
         ".github/workflows/ci.yml",
         "demo/src/jsMain/resources/index.html",
         "demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt",
@@ -199,7 +198,6 @@ registerAudit(
     "phase26Audit",
     "Phase 26",
     listOf(
-        "docs/PHASE26_FULL_ENC_PORTRAYAL_AND_SNAPSHOTS.md",
         "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderPipelineDiagnostics.kt",
         "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/RenderPipelineDiagnosticsTest.kt",
         "demo/src/jsMain/kotlin/io/github/s57/demo/Main.kt",
