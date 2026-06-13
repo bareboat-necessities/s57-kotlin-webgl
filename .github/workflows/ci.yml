@@ -45,15 +45,15 @@ jobs:
           fi
           echo "S52_SOURCE_DIR=${{ github.workspace }}/$S52_SOURCE_DIR" >> "$GITHUB_ENV"
           echo "Using S52 source composite build at $S52_SOURCE_DIR"
-      - name: Build Phase 25 with S-52 0.5.5 Kotlin symbology
+      - name: Build S-52 Kotlin symbology
         run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build :demo:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
       - name: Package NOAA Statue of Liberty browser demo
         shell: bash
         run: bash .github/scripts/package-noaa-demo-artifact.sh
-      - name: Generate Phase 26 ENC render snapshot
+      - name: Generate ENC render snapshot
         shell: bash
         run: bash .github/scripts/run-ci-enc-snapshot.sh
-      - name: Upload Phase 26 ENC render snapshot
+      - name: Upload ENC render snapshot
         uses: actions/upload-artifact@v4
         with:
           name: enc-render-snapshot
