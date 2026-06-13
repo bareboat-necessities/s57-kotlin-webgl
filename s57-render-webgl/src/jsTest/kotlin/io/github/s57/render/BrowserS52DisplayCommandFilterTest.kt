@@ -114,6 +114,29 @@ class BrowserS52DisplayCommandFilterTest {
         assertTrue(plan.commands.single() is S52DrawCommand.AreaPattern)
     }
 
+    @Test
+    fun decluttersVectorAreaPatternsByScreenTileAtOverviewScale() {
+        val plan = buildBrowserS52DisplayCommandPlan(
+            commands = listOf(
+                areaPatternCommand(featureId = 9L, patternName = "VECTOR_ONLY_PATTERN"),
+                areaPatternCommand(featureId = 10L, patternName = "VECTOR_ONLY_PATTERN")
+            ),
+            sourceFeatures = listOf(
+                feature(id = 9L, objectClass = "LNDRGN", attributes = emptyMap(), geometry = s57Polygon()),
+                feature(id = 10L, objectClass = "LNDRGN", attributes = emptyMap(), geometry = s57Polygon())
+            ),
+            presLib = presLib,
+            viewport = viewport,
+            widthPx = 800,
+            heightPx = 600,
+            scaleDenominator = 120_000.0
+        )
+
+        assertEquals("overview", plan.declutterProfile)
+        assertEquals(1, plan.commands.size)
+        assertEquals(1, plan.suppressedVectorAreaPatternDeclutterCount)
+    }
+
 
     @Test
     fun skipsNauticalPublicationAreasInsteadOfAliasingThemToLand() {

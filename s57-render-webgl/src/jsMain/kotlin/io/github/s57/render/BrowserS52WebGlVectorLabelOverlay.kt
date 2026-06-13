@@ -78,7 +78,7 @@ internal class BrowserS52WebGlTextPostpass(
         viewport: RenderViewport,
         settings: MarinerSettings
     ): List<BrowserS52TextPlacement> {
-        val occupied = ArrayList<BrowserS52PixelBounds>()
+        val occupied = BrowserS52TextOccupancyGrid(cellPx = 64.0)
         val placements = ArrayList<BrowserS52TextPlacement>()
         for (command in commands) {
             val anchor = anchor(command.geometry, viewport) ?: continue
@@ -98,8 +98,8 @@ internal class BrowserS52WebGlTextPostpass(
                 maxY = anchor.y + metrics.height * 0.5 + style.paddingPx
             )
             if (bounds.outside(canvas.width.toDouble(), canvas.height.toDouble())) continue
-            if (occupied.any { it.intersects(bounds) }) continue
-            occupied += bounds
+            if (occupied.intersects(bounds)) continue
+            occupied.add(bounds)
             placements += BrowserS52TextPlacement(label, kind, style, metrics, anchor, bounds)
         }
         return placements
@@ -308,6 +308,33 @@ private data class BrowserS52TextStyle(
 private data class BrowserS52PixelBounds(val minX: Double, val minY: Double, val maxX: Double, val maxY: Double) {
     fun outside(width: Double, height: Double): Boolean = maxX < 0.0 || minX > width || maxY < 0.0 || minY > height
     fun intersects(other: BrowserS52PixelBounds): Boolean = minX <= other.maxX && maxX >= other.minX && minY <= other.maxY && maxY >= other.minY
+}
+private class BrowserS52TextOccupancyGrid(private val cellPx: Double) {
+    private val cells = hashMapOf<Long, MutableList<BrowserS52PixelBounds>>()
+
+    fun intersects(bounds: BrowserS52PixelBounds): Boolean {
+        for (key in keys(bounds)) {
+            val bucket = cells[key] ?: continue
+            if (bucket.any { it.intersects(bounds) }) return true
+        }
+        return false
+    }
+
+    fun add(bounds: BrowserS52PixelBounds) {
+        for (key in keys(bounds)) cells.getOrPut(key) { ArrayList() }.add(bounds)
+    }
+
+    private fun keys(bounds: BrowserS52PixelBounds): Sequence<Long> = sequence {
+        val minCellX = (bounds.minX / cellPx).toInt()
+        val maxCellX = (bounds.maxX / cellPx).toInt()
+        val minCellY = (bounds.minY / cellPx).toInt()
+        val maxCellY = (bounds.maxY / cellPx).toInt()
+        for (x in minCellX..maxCellX) {
+            for (y in minCellY..maxCellY) {
+                yield((x.toLong() shl 32) xor (y.toLong() and 0xffffffffL))
+            }
+        }
+    }
 }
 private data class BrowserS52TextPlacement(
     val label: String,

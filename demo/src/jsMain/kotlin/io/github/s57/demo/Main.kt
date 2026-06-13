@@ -278,6 +278,11 @@ fun main() {
     }
 
     var pendingInteractiveRenderTimer: Int? = null
+    var pendingInteractiveRenderReason: String = "interactive"
+    var lastInteractiveRenderAtMs: Double = 0.0
+    val minInteractiveRenderIntervalMs = 85.0
+
+    fun nowMs(): Double = js("(typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()").unsafeCast<Double>()
 
     fun syncScaleInputFromCanvas() {
         val scale = chartCanvas.status().scaleDenominator
@@ -285,22 +290,32 @@ fun main() {
         if (scale != null) scaleInput.value = scale.roundToInt().toString()
     }
 
-    scheduleInteractiveRender = { reason ->
-        pendingInteractiveRenderTimer?.let { window.clearTimeout(it) }
-        pendingInteractiveRenderTimer = window.setTimeout({
-            pendingInteractiveRenderTimer = null
-            latestCanvasRender = null
-            chartCanvas.dispatch(ChartCanvasCommand.Render(reason))
-            syncScaleInputFromCanvas()
-            latestCanvasRender?.let { rendered ->
-                status?.textContent = buildString {
-                    appendLine("Rendered interactive " + reason + " scale=" + (chartCanvas.status().scaleDenominator?.roundToInt()?.toString() ?: "auto"))
-                    appendLine(rendered.drawing.message)
-                    appendLine("Use Download diagnostics JSON for the last full diagnostic report.")
-                }
+    fun runInteractiveRender(reason: String) {
+        latestCanvasRender = null
+        chartCanvas.dispatch(ChartCanvasCommand.Render(reason))
+        lastInteractiveRenderAtMs = nowMs()
+        syncScaleInputFromCanvas()
+        latestCanvasRender?.let { rendered ->
+            status?.textContent = buildString {
+                appendLine("Rendered interactive " + reason + " scale=" + (chartCanvas.status().scaleDenominator?.roundToInt()?.toString() ?: "auto"))
+                appendLine(rendered.drawing.message)
+                appendLine("Use Download diagnostics JSON for the last full diagnostic report.")
             }
-            updateCellSummary()
-        }, 90)
+        }
+        updateCellSummary()
+    }
+
+    scheduleInteractiveRender = { reason ->
+        pendingInteractiveRenderReason = reason
+        if (pendingInteractiveRenderTimer == null) {
+            val elapsed = nowMs() - lastInteractiveRenderAtMs
+            val delay = (minInteractiveRenderIntervalMs - elapsed).coerceAtLeast(0.0).roundToInt()
+            pendingInteractiveRenderTimer = window.setTimeout({
+                val renderReason = pendingInteractiveRenderReason
+                pendingInteractiveRenderTimer = null
+                runInteractiveRender(renderReason)
+            }, delay)
+        }
     }
 
     fun importSummary(): String = buildString {

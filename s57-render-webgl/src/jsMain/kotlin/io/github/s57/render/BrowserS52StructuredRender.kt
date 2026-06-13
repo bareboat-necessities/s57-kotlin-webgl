@@ -182,8 +182,13 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     window.asDynamic().s57S52RasterCommandCount = portrayed.rasterCommandCount
     window.asDynamic().s57S52DisplayCommandCount = displayPlan.commands.size
     window.asDynamic().s57S52WebGlTextCommandCount = displayPlan.textCommands.size
+    window.asDynamic().s57S52DeclutterProfile = displayPlan.declutterProfile
     window.asDynamic().s57S52SuppressedRasterAreaPatternCount = displayPlan.suppressedRasterAreaPatternCount
     window.asDynamic().s57S52SuppressedDuplicatePointSymbolCount = displayPlan.suppressedDuplicatePointSymbolCount
+    window.asDynamic().s57S52SuppressedScalePointSymbolCount = displayPlan.suppressedScalePointSymbolCount
+    window.asDynamic().s57S52SuppressedTextDeclutterCount = displayPlan.suppressedTextDeclutterCount
+    window.asDynamic().s57S52SuppressedSoundingDeclutterCount = displayPlan.suppressedSoundingDeclutterCount
+    window.asDynamic().s57S52SuppressedVectorAreaPatternDeclutterCount = displayPlan.suppressedVectorAreaPatternDeclutterCount
     window.asDynamic().s57S52InitialDrawCalls = 0
     window.asDynamic().s57S52LastResourceDrawCalls = 0
     window.asDynamic().s57S52SuppressedReentrantResourceCallbacks = 0
@@ -247,8 +252,13 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " webGlCommands=" + displayPlan.commands.size +
             " webGlTextCommands=" + displayPlan.textCommands.size +
             " rasterCommands=" + portrayed.rasterCommandCount +
+            " declutterProfile=" + displayPlan.declutterProfile +
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
             " suppressedDuplicatePointSymbols=" + displayPlan.suppressedDuplicatePointSymbolCount +
+            " suppressedScalePointSymbols=" + displayPlan.suppressedScalePointSymbolCount +
+            " suppressedText=" + displayPlan.suppressedTextDeclutterCount +
+            " suppressedSoundings=" + displayPlan.suppressedSoundingDeclutterCount +
+            " suppressedVectorAreaPatterns=" + displayPlan.suppressedVectorAreaPatternDeclutterCount +
             " reentrantResourceCallbacks=" + ((window.asDynamic().s57S52SuppressedReentrantResourceCallbacks as? Number)?.toInt() ?: 0) +
             " contextResetRetry=" + usedContextResetRetry +
             " drawCalls=" + stats.drawCalls +
