@@ -59,6 +59,7 @@ dependencyResolutionManagement {
             ?: "build/s52-maven"
         maven { url = uri(configuredS52Repo) }
         maven { url = uri("$configuredS52Repo/maven") }
+        maven { url = uri("$configuredS52Repo/s52-kotlin-webgl-release-maven-0.5.5") }
         maven { url = uri("$configuredS52Repo/s52-kotlin-webgl-release-maven-0.5.4") }
         maven { url = uri("$configuredS52Repo/s52-kotlin-webgl-release-maven-0.5.3") }
         maven { url = uri("$configuredS52Repo/s52-kotlin-webgl-release-maven-0.5.0") }

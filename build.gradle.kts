@@ -132,8 +132,8 @@ registerAudit(
     "Phase 6",
     listOf(".github/workflows/ci.yml", "gradle.properties")
 ) {
-    requireText("gradle.properties", "s52.version=0.5.4", "S52 version should stay on 0.5.4.")
-    requireText(".github/workflows/ci.yml", "s52-kotlin-webgl-release-maven-0.5.4.zip", "CI should keep downloading the s52-kotlin-webgl v0.5.4 Maven release ZIP.")
+    requireText("gradle.properties", "s52.version=0.5.5", "S52 version should stay on 0.5.5.")
+    requireText(".github/workflows/ci.yml", "s52-kotlin-webgl-release-maven-0.5.5.zip", "CI should keep downloading the s52-kotlin-webgl v0.5.5 Maven release ZIP.")
 }
 
 tasks.register("phase6Check") { dependsOn("phase5Check", "phase6Audit", moduleBuilds) }
