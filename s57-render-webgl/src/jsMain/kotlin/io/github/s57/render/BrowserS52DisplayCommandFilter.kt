@@ -1,6 +1,7 @@
 package io.github.s57.render
 
 import io.github.s52.core.draw.S52DrawCommand
+import io.github.s52.core.geometry.Coordinate
 import io.github.s52.core.geometry.EncGeometry
 import io.github.s52.preslib.PresLibPack
 import io.github.s52.render.webgl.RenderViewport
@@ -210,8 +211,8 @@ private data class BrowserS52DeclutterProfile(
     }
 }
 
-private data class BrowserS52PixelPoint(val x: Double, val y: Double)
-private data class BrowserS52PixelBounds(val minX: Double, val minY: Double, val maxX: Double, val maxY: Double) {
+private data class BrowserS52PlanPixelPoint(val x: Double, val y: Double)
+private data class BrowserS52PlanPixelBounds(val minX: Double, val minY: Double, val maxX: Double, val maxY: Double) {
     val area: Double get() = (maxX - minX).coerceAtLeast(0.0) * (maxY - minY).coerceAtLeast(0.0)
     fun outside(width: Double, height: Double): Boolean = maxX < 0.0 || minX > width || maxY < 0.0 || minY > height
 }
@@ -219,13 +220,13 @@ private data class BrowserS52PixelBounds(val minX: Double, val minY: Double, val
 private class BrowserS52ScreenTileSet(private val tilePx: Int) {
     private val occupied = hashSetOf<Long>()
 
-    fun accept(point: BrowserS52PixelPoint): Boolean {
+    fun accept(point: BrowserS52PlanPixelPoint): Boolean {
         if (tilePx <= 0) return true
         val key = key(point)
         return occupied.add(key)
     }
 
-    private fun key(point: BrowserS52PixelPoint): Long {
+    private fun key(point: BrowserS52PlanPixelPoint): Long {
         val x = (point.x / tilePx.toDouble()).toInt()
         val y = (point.y / tilePx.toDouble()).toInt()
         return (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
@@ -235,7 +236,7 @@ private class BrowserS52ScreenTileSet(private val tilePx: Int) {
 private class BrowserS52TileWinners<T : S52DrawCommand>(private val tilePx: Int) {
     private val winners = linkedMapOf<Long, BrowserS52TileWinner<T>>()
 
-    fun put(point: BrowserS52PixelPoint, command: T, score: Int) {
+    fun put(point: BrowserS52PlanPixelPoint, command: T, score: Int) {
         if (tilePx <= 0) {
             winners[command.featureId] = BrowserS52TileWinner(command, score)
             return
@@ -247,7 +248,7 @@ private class BrowserS52TileWinners<T : S52DrawCommand>(private val tilePx: Int)
 
     fun commands(): List<T> = winners.values.map { it.command }
 
-    private fun key(point: BrowserS52PixelPoint): Long {
+    private fun key(point: BrowserS52PlanPixelPoint): Long {
         val x = (point.x / tilePx.toDouble()).toInt()
         val y = (point.y / tilePx.toDouble()).toInt()
         return (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
@@ -328,14 +329,14 @@ private fun S52DrawCommand.AreaPattern.isDeclutteredVectorAreaPattern(
     return !grid.accept(anchor)
 }
 
-private fun EncGeometry.screenAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PixelPoint? = when (this) {
+private fun EncGeometry.screenAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PlanPixelPoint? = when (this) {
     is EncGeometry.Point -> coordinate.project(viewport, widthPx, heightPx)
     is EncGeometry.MultiPoint -> coordinates.firstOrNull()?.project(viewport, widthPx, heightPx)
     is EncGeometry.LineString -> coordinates.lineAnchor(viewport, widthPx, heightPx)
     is EncGeometry.Polygon -> outer.polygonAnchor(viewport, widthPx, heightPx)
 }
 
-private fun EncGeometry.screenBounds(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PixelBounds? {
+private fun EncGeometry.screenBounds(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PlanPixelBounds? {
     val points = when (this) {
         is EncGeometry.Point -> listOf(coordinate.project(viewport, widthPx, heightPx))
         is EncGeometry.MultiPoint -> coordinates.map { it.project(viewport, widthPx, heightPx) }
@@ -343,7 +344,7 @@ private fun EncGeometry.screenBounds(viewport: RenderViewport, widthPx: Int, hei
         is EncGeometry.Polygon -> outer.map { it.project(viewport, widthPx, heightPx) }
     }
     if (points.isEmpty()) return null
-    return BrowserS52PixelBounds(
+    return BrowserS52PlanPixelBounds(
         minX = points.minOf { it.x },
         minY = points.minOf { it.y },
         maxX = points.maxOf { it.x },
@@ -351,13 +352,13 @@ private fun EncGeometry.screenBounds(viewport: RenderViewport, widthPx: Int, hei
     )
 }
 
-private fun Coordinate.project(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PixelPoint {
+private fun Coordinate.project(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PlanPixelPoint {
     val x = ((lon - viewport.west) / (viewport.east - viewport.west).coerceAtLeast(1e-12)) * widthPx.toDouble()
     val y = (1.0 - ((lat - viewport.south) / (viewport.north - viewport.south).coerceAtLeast(1e-12))) * heightPx.toDouble()
-    return BrowserS52PixelPoint(x, y)
+    return BrowserS52PlanPixelPoint(x, y)
 }
 
-private fun List<Coordinate>.lineAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PixelPoint? {
+private fun List<Coordinate>.lineAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PlanPixelPoint? {
     if (isEmpty()) return null
     val points = map { it.project(viewport, widthPx, heightPx) }
     var total = 0.0
@@ -371,14 +372,14 @@ private fun List<Coordinate>.lineAnchor(viewport: RenderViewport, widthPx: Int, 
         val segment = a.distance(b)
         if (acc + segment >= half && segment > 1e-9) {
             val t = ((half - acc) / segment).coerceIn(0.0, 1.0)
-            return BrowserS52PixelPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+            return BrowserS52PlanPixelPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
         }
         acc += segment
     }
     return points.last()
 }
 
-private fun List<Coordinate>.polygonAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PixelPoint? {
+private fun List<Coordinate>.polygonAnchor(viewport: RenderViewport, widthPx: Int, heightPx: Int): BrowserS52PlanPixelPoint? {
     if (isEmpty()) return null
     val points = map { it.project(viewport, widthPx, heightPx) }
     var twiceArea = 0.0
@@ -394,16 +395,16 @@ private fun List<Coordinate>.polygonAnchor(viewport: RenderViewport, widthPx: In
     }
     if (abs(twiceArea) > 1e-9) {
         val factor = 1.0 / (3.0 * twiceArea)
-        return BrowserS52PixelPoint(cx * factor, cy * factor)
+        return BrowserS52PlanPixelPoint(cx * factor, cy * factor)
     }
-    return BrowserS52PixelPoint(
+    return BrowserS52PlanPixelPoint(
         x = (points.minOf { it.x } + points.maxOf { it.x }) * 0.5,
         y = (points.minOf { it.y } + points.maxOf { it.y }) * 0.5
     )
 }
 
-private fun BrowserS52PixelPoint.distance(other: BrowserS52PixelPoint): Double = hypot(other.x - x, other.y - y)
-private fun BrowserS52PixelPoint.outside(widthPx: Int, heightPx: Int): Boolean = x < -32.0 || y < -32.0 || x > widthPx + 32.0 || y > heightPx + 32.0
+private fun BrowserS52PlanPixelPoint.distance(other: BrowserS52PlanPixelPoint): Double = hypot(other.x - x, other.y - y)
+private fun BrowserS52PlanPixelPoint.outside(widthPx: Int, heightPx: Int): Boolean = x < -32.0 || y < -32.0 || x > widthPx + 32.0 || y > heightPx + 32.0
 
 private fun Map<Long, String>.objectClassFor(featureId: Long): String = this[featureId] ?: this[featureId / 1000L] ?: ""
 
