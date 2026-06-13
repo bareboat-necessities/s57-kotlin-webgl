@@ -74,6 +74,64 @@
   </div>
   <script>
     (function () {
+      function installContextRetryShim() {
+        var htmlCanvas = window.HTMLCanvasElement && window.HTMLCanvasElement.prototype;
+        if (!htmlCanvas || !htmlCanvas.getContext) {
+          window.s57WebGl2ContextRetryShim = 'canvas-unavailable-before-demo-js';
+          return;
+        }
+        if (htmlCanvas.__s57WebGl2ContextRetryInstalled) {
+          window.s57WebGl2ContextRetryShim = 'already-installed-before-demo-js';
+          return;
+        }
+        var originalGetContext = htmlCanvas.getContext;
+        htmlCanvas.__s57WebGl2OriginalGetContext = originalGetContext;
+        htmlCanvas.getContext = function (type, attrs) {
+          if (type !== 'webgl2') return originalGetContext.apply(this, arguments);
+          var firstError = null;
+          var context = null;
+          try {
+            context = originalGetContext.apply(this, arguments);
+          } catch (error) {
+            firstError = error;
+          }
+          if (context) return context;
+          var retriedRelaxed = false;
+          if (attrs && attrs.failIfMajorPerformanceCaveat === true) {
+            var relaxed = {};
+            for (var key in attrs) relaxed[key] = attrs[key];
+            relaxed.failIfMajorPerformanceCaveat = false;
+            retriedRelaxed = true;
+            try {
+              context = originalGetContext.call(this, type, relaxed);
+            } catch (_) {
+              context = null;
+            }
+            if (context) {
+              window.s57WebGl2ContextRetryShim = 'used-relaxed-performance-caveat-before-demo-js';
+              return context;
+            }
+          }
+          if (attrs) {
+            try {
+              context = originalGetContext.call(this, type);
+            } catch (_) {
+              context = null;
+            }
+            if (context) {
+              window.s57WebGl2ContextRetryShim = retriedRelaxed ? 'used-attribute-free-after-relaxed-before-demo-js' : 'used-attribute-free-before-demo-js';
+              return context;
+            }
+          }
+          if (firstError) throw firstError;
+          return context;
+        };
+        htmlCanvas.__s57WebGl2ContextRetryInstalled = true;
+        window.s57WebGl2ContextRetryShim = 'installed-before-demo-js';
+      }
+
+      installContextRetryShim();
+
       if (typeof WebGL2RenderingContext === 'undefined' || typeof WebGLRenderingContext === 'undefined') {
         window.s57WebGl2KotlinJsShim = 'not-needed-or-unavailable';
         return;
