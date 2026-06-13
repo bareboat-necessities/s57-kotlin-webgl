@@ -6,6 +6,7 @@ import io.github.s52.core.geometry.EncGeometry
 import io.github.s52.core.settings.MarinerSettings
 import io.github.s52.preslib.PresLibPack
 import io.github.s52.render.webgl.RenderViewport
+import kotlinx.browser.window
 import org.khronos.webgl.Float32Array
 import org.khronos.webgl.WebGLBuffer
 import org.khronos.webgl.WebGLProgram
@@ -35,7 +36,7 @@ internal class BrowserS52WebGlTextPostpass(
     private val canvas: HTMLCanvasElement,
     private val presLib: PresLibPack
 ) {
-    private val gl: WebGLRenderingContext = canvas.getContext("webgl2").unsafeCast<WebGLRenderingContext>()
+    private val gl: WebGLRenderingContext = requireWebGl2(canvas)
     private val program: BrowserS52TextProgram = BrowserS52TextProgram(gl)
     private val atlasCanvas: HTMLCanvasElement = canvas.ownerDocument!!.createElement("canvas").unsafeCast<HTMLCanvasElement>()
     private val atlasContext: CanvasRenderingContext2D = atlasCanvas.getContext("2d").unsafeCast<CanvasRenderingContext2D>()
@@ -61,17 +62,35 @@ internal class BrowserS52WebGlTextPostpass(
         gl.enable(WebGLRenderingContext.BLEND)
         gl.blendFunc(WebGLRenderingContext.SRC_ALPHA, WebGLRenderingContext.ONE_MINUS_SRC_ALPHA)
 
-        var drawCalls = 0
-        for (placement in placements) {
-            val quad = placement.toQuad(canvas.width, canvas.height, atlas.width, atlas.height)
-            drawCalls += program.draw(quad)
-        }
+        val vertices = placements.toVertexBuffer(canvas.width, canvas.height, atlas.width, atlas.height)
+        val drawCalls = program.drawBatch(vertices, placements.size * 6)
+        window.asDynamic().s57S52TextPostpassBatchDrawCalls = drawCalls
+        window.asDynamic().s57S52TextPostpassBatchVertices = placements.size * 6
+        window.asDynamic().s57S52TextPostpassBatchLabels = placements.size
         return BrowserS52TextPostpassStats(
             textCount = placements.count { it.kind == BrowserS52TextKind.Text },
             soundingCount = placements.count { it.kind == BrowserS52TextKind.Sounding },
             drawCalls = drawCalls
         )
     }
+
+    private fun requireWebGl2(canvas: HTMLCanvasElement): WebGLRenderingContext {
+        val context = getWebGl2HighPerformanceContext(canvas)
+            ?: canvas.getContext("webgl2")
+            ?: error("WebGL2 is not available for S-52 text postpass")
+        return context.unsafeCast<WebGLRenderingContext>()
+    }
+
+    private fun getWebGl2HighPerformanceContext(canvas: HTMLCanvasElement): Any? = js("""
+        canvas.getContext('webgl2', {
+            alpha: true,
+            antialias: true,
+            stencil: true,
+            preserveDrawingBuffer: false,
+            powerPreference: 'high-performance',
+            desynchronized: true
+        })
+    """)
 
     private fun buildPlacements(
         commands: List<S52DrawCommand>,
@@ -256,27 +275,45 @@ internal class BrowserS52WebGlTextPostpass(
         return BrowserS52PixelPoint(x, y)
     }
 
-    private fun BrowserS52TextPlacement.toQuad(canvasWidth: Int, canvasHeight: Int, atlasWidth: Int, atlasHeight: Int): Float32Array {
-        val x0 = anchor.x - atlasW * 0.5
-        val y0 = anchor.y - atlasH * 0.5
-        val x1 = x0 + atlasW
-        val y1 = y0 + atlasH
-        val cx0 = (x0 / canvasWidth.toDouble()) * 2.0 - 1.0
-        val cx1 = (x1 / canvasWidth.toDouble()) * 2.0 - 1.0
-        val cy0 = 1.0 - (y0 / canvasHeight.toDouble()) * 2.0
-        val cy1 = 1.0 - (y1 / canvasHeight.toDouble()) * 2.0
-        val u0 = atlasX.toDouble() / atlasWidth.toDouble()
-        val v0 = atlasY.toDouble() / atlasHeight.toDouble()
-        val u1 = (atlasX + atlasW).toDouble() / atlasWidth.toDouble()
-        val v1 = (atlasY + atlasH).toDouble() / atlasHeight.toDouble()
-        return Float32Array(arrayOf(
-            cx0.toFloat(), cy0.toFloat(), u0.toFloat(), v0.toFloat(),
-            cx1.toFloat(), cy0.toFloat(), u1.toFloat(), v0.toFloat(),
-            cx1.toFloat(), cy1.toFloat(), u1.toFloat(), v1.toFloat(),
-            cx0.toFloat(), cy0.toFloat(), u0.toFloat(), v0.toFloat(),
-            cx1.toFloat(), cy1.toFloat(), u1.toFloat(), v1.toFloat(),
-            cx0.toFloat(), cy1.toFloat(), u0.toFloat(), v1.toFloat()
-        ))
+    private fun List<BrowserS52TextPlacement>.toVertexBuffer(
+        canvasWidth: Int,
+        canvasHeight: Int,
+        atlasWidth: Int,
+        atlasHeight: Int
+    ): Float32Array {
+        val values = Array(size * 6 * 4) { 0.0f }
+        var offset = 0
+        for (placement in this) {
+            val x0 = placement.anchor.x - placement.atlasW * 0.5
+            val y0 = placement.anchor.y - placement.atlasH * 0.5
+            val x1 = x0 + placement.atlasW
+            val y1 = y0 + placement.atlasH
+            val cx0 = ((x0 / canvasWidth.toDouble()) * 2.0 - 1.0).toFloat()
+            val cx1 = ((x1 / canvasWidth.toDouble()) * 2.0 - 1.0).toFloat()
+            val cy0 = (1.0 - (y0 / canvasHeight.toDouble()) * 2.0).toFloat()
+            val cy1 = (1.0 - (y1 / canvasHeight.toDouble()) * 2.0).toFloat()
+            val u0 = (placement.atlasX.toDouble() / atlasWidth.toDouble()).toFloat()
+            val v0 = (placement.atlasY.toDouble() / atlasHeight.toDouble()).toFloat()
+            val u1 = ((placement.atlasX + placement.atlasW).toDouble() / atlasWidth.toDouble()).toFloat()
+            val v1 = ((placement.atlasY + placement.atlasH).toDouble() / atlasHeight.toDouble()).toFloat()
+
+            fun emit(x: Float, y: Float, u: Float, v: Float) {
+                values[offset++] = x
+                values[offset++] = y
+                values[offset++] = u
+                values[offset++] = v
+            }
+
+            emit(cx0, cy0, u0, v0)
+            emit(cx1, cy0, u1, v0)
+            emit(cx1, cy1, u1, v1)
+            emit(cx0, cy0, u0, v0)
+            emit(cx1, cy1, u1, v1)
+            emit(cx0, cy1, u0, v1)
+        }
+        val data = Float32Array(values.size)
+        data.set(values)
+        return data
     }
 
     private fun distance(a: BrowserS52PixelPoint, b: BrowserS52PixelPoint): Double = hypot(b.x - a.x, b.y - a.y)
@@ -369,10 +406,11 @@ private class BrowserS52TextProgram(private val gl: WebGLRenderingContext) {
         if (uTexture != null) gl.uniform1i(uTexture, unit)
     }
 
-    fun draw(vertices: Float32Array): Int {
+    fun drawBatch(vertices: Float32Array, vertexCount: Int): Int {
+        if (vertexCount <= 0) return 0
         gl.bindBuffer(WebGLRenderingContext.ARRAY_BUFFER, vertexBuffer)
         gl.bufferData(WebGLRenderingContext.ARRAY_BUFFER, vertices, WebGLRenderingContext.STREAM_DRAW)
-        gl.drawArrays(WebGLRenderingContext.TRIANGLES, 0, 6)
+        gl.drawArrays(WebGLRenderingContext.TRIANGLES, 0, vertexCount)
         return 1
     }
 

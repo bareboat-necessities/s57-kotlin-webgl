@@ -15,8 +15,9 @@ class BrowserS57WebGlRenderer(
     fun renderPlaceholder(canvasId: String): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found")
-        val gl = (canvas.getContext("webgl2") as? WebGLRenderingContext)
+        val rawGl = canvas.getContext("webgl2")
             ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available")
+        val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)
         gl.clearColor(0.06f, 0.10f, 0.16f, 1.0f)
@@ -27,8 +28,9 @@ class BrowserS57WebGlRenderer(
     fun renderStatic(canvasId: String, request: ChartRenderRequest): RenderedFrameSummary {
         val canvas = document.getElementById(canvasId) as? HTMLCanvasElement
             ?: return RenderedFrameSummary(0, 0, "Canvas '$canvasId' not found", request.camera)
-        val gl = (canvas.getContext("webgl2") as? WebGLRenderingContext)
+        val rawGl = canvas.getContext("webgl2")
             ?: return RenderedFrameSummary(canvas.width, canvas.height, "WebGL2 is not available", request.camera)
+        val gl = rawGl.unsafeCast<WebGLRenderingContext>()
 
         gl.viewport(0, 0, canvas.width, canvas.height)
         val depthTint = if (request.depthMesh.enabled) 0.20f else 0.16f

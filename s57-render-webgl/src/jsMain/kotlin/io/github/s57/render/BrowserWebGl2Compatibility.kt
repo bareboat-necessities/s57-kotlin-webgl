@@ -107,6 +107,20 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
             return renderer;
           }
 
+          function performanceCaps(gl) {
+            if (!gl) return 'unknown';
+            var caps = [];
+            try { caps.push('maxTextureSize=' + gl.getParameter(gl.MAX_TEXTURE_SIZE)); } catch (_) {}
+            try { caps.push('maxVertexAttribs=' + gl.getParameter(gl.MAX_VERTEX_ATTRIBS)); } catch (_) {}
+            try { caps.push('maxTextureUnits=' + gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)); } catch (_) {}
+            caps.push('vao=' + !!gl.createVertexArray);
+            caps.push('instancing=' + !!gl.drawArraysInstanced);
+            caps.push('ubos=' + !!gl.bindBufferBase);
+            caps.push('fenceSync=' + !!gl.fenceSync);
+            caps.push('invalidateFramebuffer=' + !!gl.invalidateFramebuffer);
+            return caps.join(',');
+          }
+
           function installHasInstanceShim() {
             if (typeof Symbol === 'undefined' || !Symbol.hasInstance) return false;
             if (w.WebGLRenderingContext.__s57WebGl2HasInstanceShim) return true;
@@ -150,6 +164,7 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
               w.s57WebGl2LastProbe = 'strict webgl2 getContext returned null';
               return;
             }
+            w.s57WebGl2PerformanceCaps = performanceCaps(probeContext);
             w.s57WebGl2LastProbe = 'strict webgl2 available; renderer=' + rendererName(probeContext);
             if (probeContext instanceof w.WebGLRenderingContext) {
               w.s57WebGl2KotlinJsShim = 'native-compatible';
@@ -174,5 +189,6 @@ internal fun webGl2KotlinJsCompatibilityShimStatus(): String {
     val castShim = (window.asDynamic().s57WebGl2KotlinJsShim as? String) ?: "unknown"
     val contextRetryShim = (window.asDynamic().s57WebGl2ContextRetryShim as? String) ?: "unknown"
     val probe = (window.asDynamic().s57WebGl2LastProbe as? String) ?: "probe-not-run"
-    return castShim + "; contextRetry=" + contextRetryShim + "; probe=" + probe
+    val caps = (window.asDynamic().s57WebGl2PerformanceCaps as? String) ?: "caps-not-run"
+    return castShim + "; contextRetry=" + contextRetryShim + "; probe=" + probe + "; caps=" + caps
 }
