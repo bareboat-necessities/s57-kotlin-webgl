@@ -138,14 +138,28 @@
       }
       try {
         var probe = document.createElement('canvas').getContext('webgl2');
-        if (probe && !(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
+        if (!probe) {
+          window.s57WebGl2KotlinJsShim = 'webgl2-unavailable-before-demo-js';
+          window.s57WebGl2LastProbe = 'webgl2 getContext returned null before demo.js';
+          return;
+        }
+        var renderer = 'unknown';
+        try {
+          var debugInfo = probe.getExtension && probe.getExtension('WEBGL_debug_renderer_info');
+          if (debugInfo) renderer = String(probe.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+        } catch (_) {
+          renderer = 'unavailable';
+        }
+        window.s57WebGl2LastProbe = 'webgl2 available before demo.js; renderer=' + renderer;
+        if (!(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
           Object.setPrototypeOf(WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype);
           window.s57WebGl2KotlinJsShim = 'installed-before-demo-js';
         } else {
-          window.s57WebGl2KotlinJsShim = probe ? 'native-compatible-before-demo-js' : 'webgl2-unavailable-before-demo-js';
+          window.s57WebGl2KotlinJsShim = 'native-compatible-before-demo-js';
         }
       } catch (error) {
         window.s57WebGl2KotlinJsShim = 'failed-before-demo-js: ' + (error && (error.message || error));
+        window.s57WebGl2LastProbe = 'failed before demo.js: ' + (error && (error.message || error));
       }
     })();
   </script>

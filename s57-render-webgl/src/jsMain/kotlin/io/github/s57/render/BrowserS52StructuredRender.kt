@@ -23,7 +23,8 @@ private data class S52PortrayalCacheKey(
 )
 
 private class CachedWebGlS52Renderer(
-    val canvasId: String
+    val canvasId: String,
+    val canvas: HTMLCanvasElement
 ) {
     lateinit var renderer: WebGlS52Renderer
     var commands: List<S52DrawCommand> = emptyList()
@@ -186,30 +187,54 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
     window.asDynamic().s57S52InitialDrawCalls = 0
     window.asDynamic().s57S52LastResourceDrawCalls = 0
     window.asDynamic().s57S52SuppressedReentrantResourceCallbacks = 0
+    window.asDynamic().s57S52ContextResetRetry = false
 
-    return try {
-        installWebGl2KotlinJsCompatibilityShim()
-        /*
-         * Do not pre-probe or replace the canvas before constructing the S-52
-         * renderer.  In browsers this can create/claim a context before the
-         * library renderer sees the canvas, after which the library constructor
-         * can still report "WebGL2 is not available".  Let WebGlS52Renderer be
-         * the first code path to request the WebGL2 context.
-         */
-        val cachedRenderer = webGlS52RendererCache.getOrPut(canvasId) {
-            CachedWebGlS52Renderer(canvasId).also { entry ->
-                entry.renderer = WebGlS52Renderer(canvas, bridge.presLib) {
-                    entry.renderReadyResources()
-                }
-                entry.ensureTextPostpass(canvas, bridge.presLib)
+    fun createRendererEntry(activeCanvas: HTMLCanvasElement): CachedWebGlS52Renderer =
+        CachedWebGlS52Renderer(canvasId, activeCanvas).also { entry ->
+            entry.renderer = WebGlS52Renderer(activeCanvas, bridge.presLib) {
+                entry.renderReadyResources()
             }
+            entry.ensureTextPostpass(activeCanvas, bridge.presLib)
         }
-        cachedRenderer.ensureTextPostpass(canvas, bridge.presLib)
+
+    fun rendererFor(activeCanvas: HTMLCanvasElement): CachedWebGlS52Renderer {
+        val cached = webGlS52RendererCache[canvasId]
+        if (cached != null && cached.canvas === activeCanvas) return cached
+        val created = createRendererEntry(activeCanvas)
+        webGlS52RendererCache[canvasId] = created
+        return created
+    }
+
+    fun renderWith(activeCanvas: HTMLCanvasElement): RenderStats {
+        val cachedRenderer = rendererFor(activeCanvas)
+        cachedRenderer.ensureTextPostpass(activeCanvas, bridge.presLib)
         cachedRenderer.commands = displayPlan.commands
         cachedRenderer.textCommands = displayPlan.textCommands
         cachedRenderer.settings = portrayed.settings
         cachedRenderer.viewport = viewport
-        val stats = cachedRenderer.renderCurrentFrame()
+        return cachedRenderer.renderCurrentFrame()
+    }
+
+    return try {
+        installWebGl2KotlinJsCompatibilityShim()
+        /*
+         * Let WebGlS52Renderer request the chart WebGL2 context first on the
+         * normal path. If a stale/lost/poisoned canvas rejects WebGL2, retry
+         * once on a replacement DOM canvas with the same id and dimensions.
+         */
+        var usedContextResetRetry = false
+        val stats = try {
+            renderWith(canvas)
+        } catch (first: Throwable) {
+            if (!first.isWebGl2ContextAvailabilityFailure()) throw first
+            webGlS52RendererCache.remove(canvasId)
+            usedContextResetRetry = true
+            window.asDynamic().s57S52ContextResetRetry = true
+            val currentCanvas = (document.getElementById(canvasId) as? HTMLCanvasElement) ?: canvas
+            val replacementCanvas = replaceCanvasForS52WebGl2(canvasId, currentCanvas)
+            installWebGl2KotlinJsCompatibilityShim()
+            renderWith(replacementCanvas)
+        }
         window.asDynamic().s57S52InitialDrawCalls = stats.drawCalls
         val s52Base = portrayed.toSummary(drawCallCount = stats.drawCalls)
         val s52 = s52Base.copy(
@@ -225,6 +250,7 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
             " suppressedRasterAreaPatterns=" + displayPlan.suppressedRasterAreaPatternCount +
             " suppressedDuplicatePointSymbols=" + displayPlan.suppressedDuplicatePointSymbolCount +
             " reentrantResourceCallbacks=" + ((window.asDynamic().s57S52SuppressedReentrantResourceCallbacks as? Number)?.toInt() ?: 0) +
+            " contextResetRetry=" + usedContextResetRetry +
             " drawCalls=" + stats.drawCalls +
             " symbols=" + stats.symbolCount +
             " lines=" + stats.lineCount +
@@ -281,13 +307,11 @@ fun BrowserS57WebGlRenderer.renderS52FrameWithSummary(
 }
 
 
-@Suppress("unused")
-private fun prepareCanvasForS52WebGl2(canvasId: String, canvas: HTMLCanvasElement): HTMLCanvasElement {
-    if (canvas.hasUsableWebGl2Context()) return canvas
-
+private fun replaceCanvasForS52WebGl2(canvasId: String, canvas: HTMLCanvasElement): HTMLCanvasElement {
     /*
      * A canvas can permanently reject webgl2 after earlier demo/debug code has
-     * claimed it with webgl1 or 2D.  The S-52 path must not inherit that poisoned
+     * claimed it with webgl1/2D, after context loss, or after a failed context
+     * attribute negotiation.  The S-52 retry path must not inherit that poisoned
      * canvas.  Replace only the DOM element, keeping id/class/size/style, and let
      * WebGlS52Renderer create a fresh WebGL2 context on the replacement.
      */
@@ -302,13 +326,25 @@ private fun prepareCanvasForS52WebGl2(canvasId: String, canvas: HTMLCanvasElemen
     replacement.setAttribute("data-s57-s52-context-reset", "webgl2")
     canvas.parentNode?.replaceChild(replacement, canvas)
     webGlS52RendererCache.remove(canvasId)
+    dispatchChartCanvasReplacedEvent(canvasId)
     return replacement
 }
 
-private fun HTMLCanvasElement.hasUsableWebGl2Context(): Boolean = try {
-    getContext("webgl2") != null
-} catch (_: Throwable) {
-    false
+private fun dispatchChartCanvasReplacedEvent(canvasId: String) {
+    try {
+        val event = js("typeof CustomEvent === 'function' ? new CustomEvent('s57-chart-canvas-replaced', { detail: {} }) : null")
+        if (event != null) {
+            event.asDynamic().detail.canvasId = canvasId
+            window.asDynamic().dispatchEvent(event)
+        }
+    } catch (_: Throwable) {
+        // Rebinding browser input is best-effort; rendering must not fail here.
+    }
+}
+
+private fun Throwable.isWebGl2ContextAvailabilityFailure(): Boolean {
+    val text = (message ?: toString()).lowercase()
+    return "webgl2" in text || "context lost" in text || "context" in text && "available" in text
 }
 
 /**

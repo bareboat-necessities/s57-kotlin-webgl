@@ -104,7 +104,20 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
           try {
             var probeCanvas = document.createElement('canvas');
             var probeContext = probeCanvas.getContext('webgl2');
-            if (probeContext && !(probeContext instanceof w.WebGLRenderingContext)) {
+            if (!probeContext) {
+              w.s57WebGl2KotlinJsShim = 'webgl2-unavailable';
+              w.s57WebGl2LastProbe = 'webgl2 getContext returned null';
+              return;
+            }
+            var renderer = 'unknown';
+            try {
+              var debugInfo = probeContext.getExtension && probeContext.getExtension('WEBGL_debug_renderer_info');
+              if (debugInfo) renderer = String(probeContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+            } catch (_) {
+              renderer = 'unavailable';
+            }
+            w.s57WebGl2LastProbe = 'webgl2 available; renderer=' + renderer;
+            if (!(probeContext instanceof w.WebGLRenderingContext)) {
               if (Object.getPrototypeOf(webgl2Prototype) !== webgl1Prototype) {
                 Object.setPrototypeOf(webgl2Prototype, webgl1Prototype);
               }
@@ -114,6 +127,7 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
             }
           } catch (error) {
             w.s57WebGl2KotlinJsShim = 'failed: ' + (error && (error.message || error));
+            w.s57WebGl2LastProbe = 'failed: ' + (error && (error.message || error));
           }
         })();
         """
@@ -123,5 +137,6 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
 internal fun webGl2KotlinJsCompatibilityShimStatus(): String {
     val castShim = (window.asDynamic().s57WebGl2KotlinJsShim as? String) ?: "unknown"
     val contextRetryShim = (window.asDynamic().s57WebGl2ContextRetryShim as? String) ?: "unknown"
-    return castShim + "; contextRetry=" + contextRetryShim
+    val probe = (window.asDynamic().s57WebGl2LastProbe as? String) ?: "probe-not-run"
+    return castShim + "; contextRetry=" + contextRetryShim + "; probe=" + probe
 }
