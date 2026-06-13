@@ -6,6 +6,7 @@ import io.github.s52.catalog.PrimitiveType
 import io.github.s52.catalog.S57Attribute
 import io.github.s52.catalog.S57AttributeValueKind
 import io.github.s52.catalog.S57ObjectClass
+import io.github.s52.core.draw.DisplayPrioritySorter
 import io.github.s52.core.draw.S52DrawCommand
 import io.github.s52.core.geometry.Coordinate
 import io.github.s52.core.geometry.EncGeometry
@@ -49,6 +50,10 @@ internal class BrowserS52Bridge(
         val settings = browserS52Settings(paletteName, scaleDenominator)
         val context = PortrayalContext(compilationScale = settings.scale, displayScale = settings.scale)
         val commands = portrayResiliently(encFeatures, settings, context, diagnostics)
+            // The resilient path can concatenate independently portrayed chunks;
+            // restore one global S-52 painter order before WebGL draws areas,
+            // contours, symbols, and text.
+            .sortedWith(DisplayPrioritySorter)
         val rasterCommandCount = commands.count { it.usesRasterPresentationAsset() }
         return BrowserS52PortrayalResult(profile, encFeatures.size, commands, rasterCommandCount, diagnostics, settings)
     }
@@ -161,6 +166,18 @@ internal class BrowserS52Bridge(
             return null
         }
         val sourceObjectClassAcronym = objectClass.uppercase()
+        if (sourceObjectClassAcronym.isMetadataOnlyNonPortrayalObjectClass()) {
+            diagnostics += s52AdapterDiagnostic(
+                severity = RenderPipelineSeverity.Info,
+                featureId = id,
+                objectClass = this.objectClass,
+                primitive = primitive.name,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.unmodeled_object_class",
+                message = "feature=$id objectClass=${this.objectClass} is valid S-57 metadata/coverage and is intentionally skipped instead of aliased to a visible area fill"
+            )
+            return null
+        }
         val portrayalObjectClassAcronym = sourceObjectClassAcronym.s52CompatibleObjectClassAcronym(primitive)
         val objectClass = s52ObjectClass(portrayalObjectClassAcronym)
         if (objectClass == null) {
@@ -525,10 +542,16 @@ private fun String.isKnownUnmodeledObjectClass(): Boolean {
         // Present in some NOAA ENCs, but not currently in s52-kotlin-webgl 0.5.
         // These are intentionally kept out of the warning counters until the
         // upstream S-52 catalogue grows first-class entries for them.
-        "CANBNK",
-        "M_NPUB"
-    )
+        "CANBNK"
+    ) || value.isMetadataOnlyNonPortrayalObjectClass()
 }
+
+private fun String.isMetadataOnlyNonPortrayalObjectClass(): Boolean = uppercase() in setOf(
+    // M_NPUB describes nautical-publication metadata/coverage.  It must not be
+    // portrayed or aliased to LNDARE/LNDRGN because many cells encode it as
+    // broad polygons that would paint the entire sea as land in snapshots.
+    "M_NPUB"
+)
 
 private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean = when (uppercase() to primitive) {
     "ACHBRT" to PrimitiveType.Line,
