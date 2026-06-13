@@ -518,7 +518,6 @@ private fun String.s52CompatibleObjectClassAcronym(primitive: PrimitiveType): St
     "DRYDOC" -> "DOCARE"
     "HRBFAC" -> if (primitive == PrimitiveType.Point) "MORFAC" else "HRBARE"
     "LNDRGN" -> "LNDARE"
-    "M_NPUB" -> if (primitive == PrimitiveType.Area) "LNDARE" else uppercase()
     "PIPARE" -> if (primitive == PrimitiveType.Line) "PIPSOL" else "RESARE"
     "SLOTOP" -> "SLCONS"
     "UNSARE" -> "M_QUAL"
@@ -531,7 +530,11 @@ private fun String.isKnownUnmodeledObjectClass(): Boolean {
         // Present in some NOAA ENCs, but not currently in s52-kotlin-webgl 0.5.
         // These are intentionally kept out of the warning counters until the
         // upstream S-52 catalogue grows first-class entries for them.
-        "CANBNK"
+        "CANBNK",
+        // M_NPUB describes nautical-publication metadata/coverage.  It must
+        // not be portrayed as LNDARE because many cells encode it as broad
+        // polygons that would paint the entire sea as land in snapshots.
+        "M_NPUB"
     )
 }
 

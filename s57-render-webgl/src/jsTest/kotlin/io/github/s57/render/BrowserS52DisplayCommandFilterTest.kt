@@ -114,6 +114,20 @@ class BrowserS52DisplayCommandFilterTest {
         assertTrue(plan.commands.single() is S52DrawCommand.AreaPattern)
     }
 
+
+    @Test
+    fun skipsNauticalPublicationAreasInsteadOfAliasingThemToLand() {
+        val result = BrowserS52Bridge().portray(
+            features = listOf(feature(id = 42L, objectClass = "M_NPUB", attributes = emptyMap(), geometry = s57Polygon())),
+            paletteName = "DAY",
+            scaleDenominator = 40_000.0
+        )
+
+        assertEquals(0, result.featureCount)
+        assertTrue(result.commands.none { command -> command is S52DrawCommand.AreaFill && command.colorToken.uppercase() == "LANDA" })
+        assertTrue(result.diagnostics.any { diagnostic -> diagnostic.code == "s52.unmodeled_object_class" })
+    }
+
     private fun textCommand(
         featureId: Long = 1L,
         textExpression: String,
