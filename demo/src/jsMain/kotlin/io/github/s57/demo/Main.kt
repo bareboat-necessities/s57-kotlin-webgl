@@ -128,7 +128,7 @@ fun main() {
             is ChartCanvasEvent.StatusChanged -> Unit
         }
     }
-    val chartInput = BrowserChartInput(
+    BrowserChartInput(
         controller = ChartInteractionController(listener = object : ChartInteractionListener {
         override fun onUserEvent(event: ChartUserEvent) {
             when (event) {
@@ -155,12 +155,7 @@ fun main() {
         requireFocusForWheelZoom = true,
         wheelZoomOnly = true,
         invertWheelZoom = true
-    )
-    chartInput.attach("chartCanvas")
-    window.addEventListener("s57-chart-canvas-replaced", { rawEvent ->
-        val detail = rawEvent.asDynamic().detail
-        if ((detail?.canvasId as? String) == "chartCanvas") chartInput.attach("chartCanvas")
-    })
+    ).attach("chartCanvas")
     val chartCache = BrowserChartIndexedDbCache()
     var imports = emptyList<S57EngineImportResult>()
     var failures = emptyList<String>()
@@ -356,9 +351,7 @@ fun main() {
             chartCanvas.dispatch(ChartCanvasCommand.SetView(fit.fittedBounds, fit.scaleDenominator, redraw = false))
             fit.scaleDenominator
         } ?: chartCanvas.status().scaleDenominator ?: fullCellRequest.scaleDenominator
-        val scale = boundedScale(
-            if (boundsFraction != null) autoScale else activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoScale
-        )
+        val scale = boundedScale(activeScaleOverride ?: scaleInput.value.toDoubleOrNull() ?: autoScale)
         activeScaleOverride = scale
         scaleInput.value = scale.roundToInt().toString()
         val palette = normalizePaletteName(paletteSelect.value)
@@ -796,15 +789,6 @@ fun main() {
             if (button) button.click();
             return null;
         };
-        window.s57Phase26RenderSnapshotWithBoundsFraction = function(fraction, label) {
-            if (typeof fraction === 'number' && isFinite(fraction)) {
-                window.s57Phase26SnapshotBoundsFraction = fraction;
-            }
-            window.s57Phase26SnapshotLabel = label || '';
-            var button = document.querySelector('#renderButton');
-            if (button) button.click();
-            return null;
-        };
     """)
 
     fun selectedInputFiles(): List<File> {
@@ -874,11 +858,8 @@ fun main() {
     }
 
     renderButton.onclick = {
-        if (phase26SnapshotMode()) {
-            val snapshotFraction = (window.asDynamic().s57Phase26SnapshotBoundsFraction as? Number)?.toDouble() ?: 0.35
-            val snapshotLabel = (window.asDynamic().s57Phase26SnapshotLabel as? String)?.takeIf { it.isNotBlank() }
-            renderActive("Phase 26 CI snapshot" + (snapshotLabel?.let { " " + it } ?: ""), boundsFraction = snapshotFraction)
-        } else renderActive("active cell")
+        if (phase26SnapshotMode()) renderActive("Phase 26 CI snapshot", boundsFraction = 0.35)
+        else renderActive("active cell")
         null
     }
 

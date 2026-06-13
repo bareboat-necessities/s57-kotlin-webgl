@@ -14,7 +14,7 @@
     button { border: 1px solid #b8c3d6; border-radius: 8px; padding: 8px 10px; background: #f8fafc; cursor: pointer; font-weight: 600; }
     button:hover { background: #eef4ff; }
     .buttonRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    canvas { width: 100%; max-width: 1100px; height: 620px; background: #e8dfc7; border-radius: 12px; border: 1px solid #334; }
+    canvas { width: 100%; max-width: 1100px; height: 620px; background: #dceefa; border-radius: 12px; border: 1px solid #334; }
     canvas:focus { outline: 3px solid #2563eb; outline-offset: 2px; }
     pre { white-space: pre-wrap; font-size: 13px; line-height: 1.35; }
     .warning { color: #9a3412; font-weight: 600; }
@@ -74,92 +74,20 @@
   </div>
   <script>
     (function () {
-      function installContextRetryShim() {
-        var htmlCanvas = window.HTMLCanvasElement && window.HTMLCanvasElement.prototype;
-        if (!htmlCanvas || !htmlCanvas.getContext) {
-          window.s57WebGl2ContextRetryShim = 'canvas-unavailable-before-demo-js';
-          return;
-        }
-        if (htmlCanvas.__s57WebGl2ContextRetryInstalled) {
-          window.s57WebGl2ContextRetryShim = 'already-installed-before-demo-js';
-          return;
-        }
-        var originalGetContext = htmlCanvas.getContext;
-        htmlCanvas.__s57WebGl2OriginalGetContext = originalGetContext;
-        htmlCanvas.getContext = function (type, attrs) {
-          if (type !== 'webgl2') return originalGetContext.apply(this, arguments);
-          var firstError = null;
-          var context = null;
-          try {
-            context = originalGetContext.apply(this, arguments);
-          } catch (error) {
-            firstError = error;
-          }
-          if (context) return context;
-          var retriedRelaxed = false;
-          if (attrs && attrs.failIfMajorPerformanceCaveat === true) {
-            var relaxed = {};
-            for (var key in attrs) relaxed[key] = attrs[key];
-            relaxed.failIfMajorPerformanceCaveat = false;
-            retriedRelaxed = true;
-            try {
-              context = originalGetContext.call(this, type, relaxed);
-            } catch (_) {
-              context = null;
-            }
-            if (context) {
-              window.s57WebGl2ContextRetryShim = 'used-relaxed-performance-caveat-before-demo-js';
-              return context;
-            }
-          }
-          if (attrs) {
-            try {
-              context = originalGetContext.call(this, type);
-            } catch (_) {
-              context = null;
-            }
-            if (context) {
-              window.s57WebGl2ContextRetryShim = retriedRelaxed ? 'used-attribute-free-after-relaxed-before-demo-js' : 'used-attribute-free-before-demo-js';
-              return context;
-            }
-          }
-          if (firstError) throw firstError;
-          return context;
-        };
-        htmlCanvas.__s57WebGl2ContextRetryInstalled = true;
-        window.s57WebGl2ContextRetryShim = 'installed-before-demo-js';
-      }
-
-      installContextRetryShim();
-
       if (typeof WebGL2RenderingContext === 'undefined' || typeof WebGLRenderingContext === 'undefined') {
         window.s57WebGl2KotlinJsShim = 'not-needed-or-unavailable';
         return;
       }
       try {
         var probe = document.createElement('canvas').getContext('webgl2');
-        if (!probe) {
-          window.s57WebGl2KotlinJsShim = 'webgl2-unavailable-before-demo-js';
-          window.s57WebGl2LastProbe = 'webgl2 getContext returned null before demo.js';
-          return;
-        }
-        var renderer = 'unknown';
-        try {
-          var debugInfo = probe.getExtension && probe.getExtension('WEBGL_debug_renderer_info');
-          if (debugInfo) renderer = String(probe.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
-        } catch (_) {
-          renderer = 'unavailable';
-        }
-        window.s57WebGl2LastProbe = 'webgl2 available before demo.js; renderer=' + renderer;
-        if (!(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
+        if (probe && !(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
           Object.setPrototypeOf(WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype);
           window.s57WebGl2KotlinJsShim = 'installed-before-demo-js';
         } else {
-          window.s57WebGl2KotlinJsShim = 'native-compatible-before-demo-js';
+          window.s57WebGl2KotlinJsShim = probe ? 'native-compatible-before-demo-js' : 'webgl2-unavailable-before-demo-js';
         }
       } catch (error) {
         window.s57WebGl2KotlinJsShim = 'failed-before-demo-js: ' + (error && (error.message || error));
-        window.s57WebGl2LastProbe = 'failed before demo.js: ' + (error && (error.message || error));
       }
     })();
   </script>

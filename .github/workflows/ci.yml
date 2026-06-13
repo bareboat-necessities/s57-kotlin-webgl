@@ -49,9 +49,6 @@ jobs:
           fi
           echo "S52_SOURCE_DIR=${{ github.workspace }}/$S52_SOURCE_DIR" >> "$GITHUB_ENV"
           echo "Using S52 source composite build at $S52_SOURCE_DIR"
-      - name: Patch S-52 WebGL2 Kotlin/JS cast
-        shell: bash
-        run: bash .github/scripts/patch-s52-052-webgl2-cast.sh "$S52_SOURCE_DIR"
       - name: Build Phase 25 with S-52 0.5.4 Kotlin symbology
         run: gradle :demo:phase12_13_14BCheck phase16BCheck :s57-core:build :s57-s52-adapter:build :s57-render-webgl:build :demo:build -Ps52.version=$S52_VERSION -Ps52MavenRepo=${{ github.workspace }}/build/s52-maven -Ps52SourceDir="$S52_SOURCE_DIR" --stacktrace
       - name: Package NOAA Statue of Liberty browser demo
@@ -65,8 +62,8 @@ jobs:
         with:
           name: enc-render-snapshot
           path: |
-            build/ci-enc-snapshot/render*.png
-            build/ci-enc-snapshot/diagnostics*.json
+            build/ci-enc-snapshot/render.png
+            build/ci-enc-snapshot/diagnostics.json
             build/ci-enc-snapshot/summary.txt
           if-no-files-found: error
       - name: Upload NOAA Statue of Liberty browser demo
