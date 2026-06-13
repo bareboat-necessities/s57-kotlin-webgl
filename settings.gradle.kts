@@ -12,23 +12,24 @@ fun patchS52WebGl2KotlinJsCast(s52SourceDir: File) {
         .firstOrNull { it.isFile && it.path.replace('\\', '/').endsWith("s52-render-webgl/src/jsMain/kotlin/io/github/s52/render/webgl/WebGlS52Renderer.kt") }
         ?: return
     val text = rendererFile.readText()
-    if (".unsafeCast<WebGLRenderingContext>()" in text && "WebGL2 is not available in this browser" in text) return
     val replacement = """private val gl: WebGLRenderingContext = (canvas.getContext("webgl2")
         ?: error("WebGL2 is not available in this browser"))
         .unsafeCast<WebGLRenderingContext>()"""
+    if (replacement in text) return
     val patterns = listOf(
         Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*canvas\.getContext\("webgl2"\)\s+as\?\s+WebGLRenderingContext\s*\?:\s*error\("WebGL2 is not available in this browser"\)"""),
-        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*\(\s*canvas\.getContext\("webgl2"\)\s+as\?\s+WebGLRenderingContext\s*\)\s*\?:\s*error\("WebGL2 is not available in this browser"\)""")
+        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*\(\s*canvas\.getContext\("webgl2"\)\s+as\?\s+WebGLRenderingContext\s*\)\s*\?:\s*error\("WebGL2 is not available in this browser"\)"""),
+        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*\(\s*canvas\.getContext\("webgl2"\)\s*\?:\s*error\("WebGL2 is not available in this browser"\)\s*\)\s*\.unsafeCast<WebGLRenderingContext>\(\)""")
     )
     for (pattern in patterns) {
         val patched = pattern.replaceFirst(text, replacement)
         if (patched != text) {
             rendererFile.writeText(patched)
-            logger.lifecycle("Patched S-52 WebGlS52Renderer WebGL2 Kotlin/JS cast: ${rendererFile.path}")
+            logger.lifecycle("Patched S-52 WebGlS52Renderer strict WebGL2 Kotlin/JS context creation: ${rendererFile.path}")
             return
         }
     }
-    logger.warn("Could not patch S-52 WebGlS52Renderer WebGL2 cast in ${rendererFile.path}; source shape was not recognized")
+    logger.warn("Could not patch S-52 WebGlS52Renderer WebGL2 context creation in ${rendererFile.path}; source shape was not recognized")
 }
 
 val configuredS52SourceDir = providers.gradleProperty("s52SourceDir").orNull

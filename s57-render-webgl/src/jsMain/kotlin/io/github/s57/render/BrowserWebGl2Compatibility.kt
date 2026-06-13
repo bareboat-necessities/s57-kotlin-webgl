@@ -5,21 +5,16 @@ import kotlinx.browser.window
 /**
  * Compatibility shim for Kotlin/JS external DOM casts around WebGL2.
  *
- * Some generated Kotlin/JS code and older S-52 WebGL2 artifacts ask the
- * browser for `canvas.getContext("webgl2")`, then safe-cast the returned
- * JavaScript object to Kotlin's `WebGLRenderingContext`.  In real browsers
- * that object is a `WebGL2RenderingContext`.  It has all WebGL1 methods used
- * by the current S-52 renderer, but JavaScript `instanceof
- * WebGLRenderingContext` can still be false, so Kotlin's safe-cast reports
- * "WebGL2 is not available" even when WebGL2 exists.
+ * This is intentionally strict WebGL2-only.  It does not return WebGL1 for a
+ * `webgl2` request and does not install Canvas2D/decoded-geometry fallbacks.
  *
- * Install this before constructing the S-52 WebGL renderer.  It is deliberately
- * narrow: it only links WebGL2RenderingContext.prototype to
- * WebGLRenderingContext.prototype when the browser exposes both constructors
- * and the native instanceof check currently fails.  It also patches WebGL2
- * context creation to retry without `failIfMajorPerformanceCaveat` when a
- * browser (notably Firefox on some software/remote GPUs) supports WebGL2 but
- * rejects stricter context attributes used by third-party renderers.
+ * Older S-52 WebGL artifacts can safe-cast a real `WebGL2RenderingContext` to
+ * Kotlin's `WebGLRenderingContext`.  Some browsers expose those as distinct JS
+ * constructors, so the safe-cast can fail even when WebGL2 exists.  Prefer the
+ * build-time S-52 source patch to replace that cast with `unsafeCast`.  This
+ * runtime shim only retries strict WebGL2 context creation and, where the JS
+ * engine allows it, widens `instanceof WebGLRenderingContext` through
+ * `Symbol.hasInstance` without mutating native WebGL prototype chains.
  */
 internal fun installWebGl2KotlinJsCompatibilityShim() {
     js(
@@ -89,41 +84,82 @@ internal fun installWebGl2KotlinJsCompatibilityShim() {
             w.s57WebGl2ContextRetryShim = 'installed';
           }
 
-          installContextRetryShim();
-
-          if (typeof w.WebGL2RenderingContext === 'undefined' || typeof w.WebGLRenderingContext === 'undefined') {
-            w.s57WebGl2KotlinJsShim = 'not-needed-or-unavailable';
-            return;
-          }
-          var webgl2Prototype = w.WebGL2RenderingContext && w.WebGL2RenderingContext.prototype;
-          var webgl1Prototype = w.WebGLRenderingContext && w.WebGLRenderingContext.prototype;
-          if (!webgl2Prototype || !webgl1Prototype || typeof Object.setPrototypeOf !== 'function') {
-            w.s57WebGl2KotlinJsShim = 'prototype-unavailable';
-            return;
-          }
-          try {
-            var probeCanvas = document.createElement('canvas');
-            var probeContext = probeCanvas.getContext('webgl2');
-            if (!probeContext) {
-              w.s57WebGl2KotlinJsShim = 'webgl2-unavailable';
-              w.s57WebGl2LastProbe = 'webgl2 getContext returned null';
-              return;
+          function probeWebGl2() {
+            var htmlCanvas = w.HTMLCanvasElement && w.HTMLCanvasElement.prototype;
+            var getContext = (htmlCanvas && htmlCanvas.__s57WebGl2OriginalGetContext) || (htmlCanvas && htmlCanvas.getContext);
+            if (!getContext || typeof document === 'undefined') return null;
+            var canvas = document.createElement('canvas');
+            try {
+              return getContext.call(canvas, 'webgl2');
+            } catch (_) {
+              return null;
             }
+          }
+
+          function rendererName(gl) {
             var renderer = 'unknown';
             try {
-              var debugInfo = probeContext.getExtension && probeContext.getExtension('WEBGL_debug_renderer_info');
-              if (debugInfo) renderer = String(probeContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+              var debugInfo = gl && gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
+              if (debugInfo) renderer = String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
             } catch (_) {
               renderer = 'unavailable';
             }
-            w.s57WebGl2LastProbe = 'webgl2 available; renderer=' + renderer;
-            if (!(probeContext instanceof w.WebGLRenderingContext)) {
-              if (Object.getPrototypeOf(webgl2Prototype) !== webgl1Prototype) {
-                Object.setPrototypeOf(webgl2Prototype, webgl1Prototype);
-              }
-              w.s57WebGl2KotlinJsShim = 'installed';
-            } else {
+            return renderer;
+          }
+
+          function installHasInstanceShim() {
+            if (typeof Symbol === 'undefined' || !Symbol.hasInstance) return false;
+            if (w.WebGLRenderingContext.__s57WebGl2HasInstanceShim) return true;
+            var nativeHasInstance = Function.prototype[Symbol.hasInstance];
+            try {
+              Object.defineProperty(w.WebGLRenderingContext, Symbol.hasInstance, {
+                configurable: true,
+                value: function (instance) {
+                  try {
+                    if (nativeHasInstance.call(this, instance)) return true;
+                    return !!(w.WebGL2RenderingContext && instance instanceof w.WebGL2RenderingContext);
+                  } catch (_) {
+                    return false;
+                  }
+                }
+              });
+              w.WebGLRenderingContext.__s57WebGl2HasInstanceShim = true;
+              return true;
+            } catch (_) {
+              return false;
+            }
+          }
+
+          installContextRetryShim();
+
+          if (typeof w.WebGLRenderingContext === 'undefined') {
+            w.s57WebGl2KotlinJsShim = 'webgl-unavailable';
+            w.s57WebGl2LastProbe = 'WebGLRenderingContext constructor is unavailable';
+            return;
+          }
+          if (typeof w.WebGL2RenderingContext === 'undefined') {
+            w.s57WebGl2KotlinJsShim = 'webgl2-constructor-unavailable';
+            w.s57WebGl2LastProbe = 'WebGL2RenderingContext constructor is unavailable';
+            return;
+          }
+
+          try {
+            var probeContext = probeWebGl2();
+            if (!probeContext) {
+              w.s57WebGl2KotlinJsShim = 'webgl2-unavailable';
+              w.s57WebGl2LastProbe = 'strict webgl2 getContext returned null';
+              return;
+            }
+            w.s57WebGl2LastProbe = 'strict webgl2 available; renderer=' + rendererName(probeContext);
+            if (probeContext instanceof w.WebGLRenderingContext) {
               w.s57WebGl2KotlinJsShim = 'native-compatible';
+              return;
+            }
+            var hasInstanceInstalled = installHasInstanceShim();
+            if (hasInstanceInstalled && probeContext instanceof w.WebGLRenderingContext) {
+              w.s57WebGl2KotlinJsShim = 'installed-hasinstance';
+            } else {
+              w.s57WebGl2KotlinJsShim = 'needs-source-unsafe-cast';
             }
           } catch (error) {
             w.s57WebGl2KotlinJsShim = 'failed: ' + (error && (error.message || error));

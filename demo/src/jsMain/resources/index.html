@@ -130,32 +130,80 @@
         window.s57WebGl2ContextRetryShim = 'installed-before-demo-js';
       }
 
-      installContextRetryShim();
-
-      if (typeof WebGL2RenderingContext === 'undefined' || typeof WebGLRenderingContext === 'undefined') {
-        window.s57WebGl2KotlinJsShim = 'not-needed-or-unavailable';
-        return;
-      }
-      try {
-        var probe = document.createElement('canvas').getContext('webgl2');
-        if (!probe) {
-          window.s57WebGl2KotlinJsShim = 'webgl2-unavailable-before-demo-js';
-          window.s57WebGl2LastProbe = 'webgl2 getContext returned null before demo.js';
-          return;
+      function probeWebGl2() {
+        var htmlCanvas = window.HTMLCanvasElement && window.HTMLCanvasElement.prototype;
+        var getContext = (htmlCanvas && htmlCanvas.__s57WebGl2OriginalGetContext) || (htmlCanvas && htmlCanvas.getContext);
+        if (!getContext) return null;
+        try {
+          return getContext.call(document.createElement('canvas'), 'webgl2');
+        } catch (_) {
+          return null;
         }
+      }
+
+      function rendererName(gl) {
         var renderer = 'unknown';
         try {
-          var debugInfo = probe.getExtension && probe.getExtension('WEBGL_debug_renderer_info');
-          if (debugInfo) renderer = String(probe.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+          var debugInfo = gl && gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
+          if (debugInfo) renderer = String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
         } catch (_) {
           renderer = 'unavailable';
         }
-        window.s57WebGl2LastProbe = 'webgl2 available before demo.js; renderer=' + renderer;
-        if (!(probe instanceof WebGLRenderingContext) && typeof Object.setPrototypeOf === 'function') {
-          Object.setPrototypeOf(WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype);
-          window.s57WebGl2KotlinJsShim = 'installed-before-demo-js';
-        } else {
+        return renderer;
+      }
+
+      function installHasInstanceShim() {
+        if (typeof Symbol === 'undefined' || !Symbol.hasInstance) return false;
+        if (WebGLRenderingContext.__s57WebGl2HasInstanceShim) return true;
+        var nativeHasInstance = Function.prototype[Symbol.hasInstance];
+        try {
+          Object.defineProperty(WebGLRenderingContext, Symbol.hasInstance, {
+            configurable: true,
+            value: function (instance) {
+              try {
+                if (nativeHasInstance.call(this, instance)) return true;
+                return !!(typeof WebGL2RenderingContext !== 'undefined' && instance instanceof WebGL2RenderingContext);
+              } catch (_) {
+                return false;
+              }
+            }
+          });
+          WebGLRenderingContext.__s57WebGl2HasInstanceShim = true;
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      installContextRetryShim();
+
+      if (typeof WebGLRenderingContext === 'undefined') {
+        window.s57WebGl2KotlinJsShim = 'webgl-unavailable-before-demo-js';
+        window.s57WebGl2LastProbe = 'WebGLRenderingContext constructor is unavailable before demo.js';
+        return;
+      }
+      if (typeof WebGL2RenderingContext === 'undefined') {
+        window.s57WebGl2KotlinJsShim = 'webgl2-constructor-unavailable-before-demo-js';
+        window.s57WebGl2LastProbe = 'WebGL2RenderingContext constructor is unavailable before demo.js';
+        return;
+      }
+      try {
+        var probe = probeWebGl2();
+        if (!probe) {
+          window.s57WebGl2KotlinJsShim = 'webgl2-unavailable-before-demo-js';
+          window.s57WebGl2LastProbe = 'strict webgl2 getContext returned null before demo.js';
+          return;
+        }
+        window.s57WebGl2LastProbe = 'strict webgl2 available before demo.js; renderer=' + rendererName(probe);
+        if (probe instanceof WebGLRenderingContext) {
           window.s57WebGl2KotlinJsShim = 'native-compatible-before-demo-js';
+          return;
+        }
+        var hasInstanceInstalled = installHasInstanceShim();
+        if (hasInstanceInstalled && probe instanceof WebGLRenderingContext) {
+          window.s57WebGl2KotlinJsShim = 'installed-hasinstance-before-demo-js';
+        } else {
+          window.s57WebGl2KotlinJsShim = 'needs-source-unsafe-cast-before-demo-js';
         }
       } catch (error) {
         window.s57WebGl2KotlinJsShim = 'failed-before-demo-js: ' + (error && (error.message || error));
