@@ -166,6 +166,18 @@ internal class BrowserS52Bridge(
             return null
         }
         val sourceObjectClassAcronym = objectClass.uppercase()
+        if (sourceObjectClassAcronym.isMetadataOnlyNonPortrayalObjectClass()) {
+            diagnostics += s52AdapterDiagnostic(
+                severity = RenderPipelineSeverity.Info,
+                featureId = id,
+                objectClass = this.objectClass,
+                primitive = primitive.name,
+                geometryType = sourceGeometry.diagnosticGeometryType(),
+                code = "s52.unmodeled_object_class",
+                message = "feature=$id objectClass=${this.objectClass} is valid S-57 metadata/coverage and is intentionally skipped instead of aliased to a visible area fill"
+            )
+            return null
+        }
         val portrayalObjectClassAcronym = sourceObjectClassAcronym.s52CompatibleObjectClassAcronym(primitive)
         val objectClass = s52ObjectClass(portrayalObjectClassAcronym)
         if (objectClass == null) {
@@ -530,13 +542,16 @@ private fun String.isKnownUnmodeledObjectClass(): Boolean {
         // Present in some NOAA ENCs, but not currently in s52-kotlin-webgl 0.5.
         // These are intentionally kept out of the warning counters until the
         // upstream S-52 catalogue grows first-class entries for them.
-        "CANBNK",
-        // M_NPUB describes nautical-publication metadata/coverage.  It must
-        // not be portrayed as LNDARE because many cells encode it as broad
-        // polygons that would paint the entire sea as land in snapshots.
-        "M_NPUB"
-    )
+        "CANBNK"
+    ) || value.isMetadataOnlyNonPortrayalObjectClass()
 }
+
+private fun String.isMetadataOnlyNonPortrayalObjectClass(): Boolean = uppercase() in setOf(
+    // M_NPUB describes nautical-publication metadata/coverage.  It must not be
+    // portrayed or aliased to LNDARE/LNDRGN because many cells encode it as
+    // broad polygons that would paint the entire sea as land in snapshots.
+    "M_NPUB"
+)
 
 private fun String.isKnownUnmodeledPrimitive(primitive: PrimitiveType): Boolean = when (uppercase() to primitive) {
     "ACHBRT" to PrimitiveType.Line,
