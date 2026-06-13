@@ -7,38 +7,12 @@ pluginManagement {
 }
 
 
-fun patchS52WebGl2KotlinJsCast(s52SourceDir: File) {
-    val rendererFile = s52SourceDir.walkTopDown()
-        .firstOrNull { it.isFile && it.path.replace('\\', '/').endsWith("s52-render-webgl/src/jsMain/kotlin/io/github/s52/render/webgl/WebGlS52Renderer.kt") }
-        ?: return
-    val text = rendererFile.readText()
-    val replacement = """private val gl: WebGLRenderingContext = (canvas.getContext("webgl2")
-        ?: error("WebGL2 is not available in this browser"))
-        .unsafeCast<WebGLRenderingContext>()"""
-    if (replacement in text) return
-    val patterns = listOf(
-        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*canvas\.getContext\("webgl2"\)\s+as\?\s+WebGLRenderingContext\s*\?:\s*error\("WebGL2 is not available in this browser"\)"""),
-        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*\(\s*canvas\.getContext\("webgl2"\)\s+as\?\s+WebGLRenderingContext\s*\)\s*\?:\s*error\("WebGL2 is not available in this browser"\)"""),
-        Regex("""private\s+val\s+gl\s*:\s*WebGLRenderingContext\s*=\s*\(\s*canvas\.getContext\("webgl2"\)\s*\?:\s*error\("WebGL2 is not available in this browser"\)\s*\)\s*\.unsafeCast<WebGLRenderingContext>\(\)""")
-    )
-    for (pattern in patterns) {
-        val patched = pattern.replaceFirst(text, replacement)
-        if (patched != text) {
-            rendererFile.writeText(patched)
-            logger.lifecycle("Patched S-52 WebGlS52Renderer strict WebGL2 Kotlin/JS context creation: ${rendererFile.path}")
-            return
-        }
-    }
-    logger.warn("Could not patch S-52 WebGlS52Renderer WebGL2 context creation in ${rendererFile.path}; source shape was not recognized")
-}
-
 val configuredS52SourceDir = providers.gradleProperty("s52SourceDir").orNull
     ?: System.getenv("S52_SOURCE_DIR")
 
 if (!configuredS52SourceDir.isNullOrBlank()) {
     val s52SourceDir = file(configuredS52SourceDir)
     if (s52SourceDir.isDirectory) {
-        patchS52WebGl2KotlinJsCast(s52SourceDir)
         includeBuild(s52SourceDir) {
             dependencySubstitution {
                 substitute(module("io.github.s52:s52-api")).using(project(":s52-api"))
