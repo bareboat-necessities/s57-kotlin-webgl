@@ -159,33 +159,33 @@ private data class BrowserS52DeclutterProfile(
         fun forScale(scaleDenominator: Double): BrowserS52DeclutterProfile = when {
             scaleDenominator >= 100_000.0 -> BrowserS52DeclutterProfile(
                 name = "overview",
-                symbolTilePx = 88,
-                criticalSymbolTilePx = 42,
-                textTilePx = 180,
+                symbolTilePx = 64,
+                criticalSymbolTilePx = 0,
+                textTilePx = 140,
                 hideNonCriticalText = true,
-                soundingTilePx = 150,
-                areaPatternTilePx = 320,
-                maxVectorAreaPatterns = 24
+                soundingTilePx = 110,
+                areaPatternTilePx = 180,
+                maxVectorAreaPatterns = 128
             )
             scaleDenominator >= 50_000.0 -> BrowserS52DeclutterProfile(
                 name = "harbor-overview",
-                symbolTilePx = 62,
-                criticalSymbolTilePx = 30,
-                textTilePx = 140,
-                hideNonCriticalText = true,
-                soundingTilePx = 96,
-                areaPatternTilePx = 240,
-                maxVectorAreaPatterns = 48
+                symbolTilePx = 42,
+                criticalSymbolTilePx = 0,
+                textTilePx = 110,
+                hideNonCriticalText = false,
+                soundingTilePx = 80,
+                areaPatternTilePx = 0,
+                maxVectorAreaPatterns = Int.MAX_VALUE
             )
             scaleDenominator >= 25_000.0 -> BrowserS52DeclutterProfile(
                 name = "harbor",
-                symbolTilePx = 44,
-                criticalSymbolTilePx = 24,
-                textTilePx = 104,
+                symbolTilePx = 30,
+                criticalSymbolTilePx = 0,
+                textTilePx = 92,
                 hideNonCriticalText = false,
-                soundingTilePx = 72,
-                areaPatternTilePx = 180,
-                maxVectorAreaPatterns = 96
+                soundingTilePx = 64,
+                areaPatternTilePx = 0,
+                maxVectorAreaPatterns = Int.MAX_VALUE
             )
             scaleDenominator >= 10_000.0 -> BrowserS52DeclutterProfile(
                 name = "approach",
@@ -266,16 +266,30 @@ private fun selectDisplayPointSymbolsByFeature(
     declutter: BrowserS52DeclutterProfile
 ): Map<Long, S52DrawCommand.PointSymbol> {
     if (declutter.symbolTilePx <= 0) return symbols.associateBy { it.featureId }
+
+    val selected = linkedMapOf<Long, S52DrawCommand.PointSymbol>()
     val normalWinners = BrowserS52TileWinners<S52DrawCommand.PointSymbol>(declutter.symbolTilePx)
-    val criticalWinners = BrowserS52TileWinners<S52DrawCommand.PointSymbol>(declutter.criticalSymbolTilePx.takeIf { it > 0 } ?: declutter.symbolTilePx)
+    val criticalWinners = BrowserS52TileWinners<S52DrawCommand.PointSymbol>(declutter.criticalSymbolTilePx)
+
     for (symbol in symbols) {
         val anchor = symbol.geometry.screenAnchor(viewport, widthPx, heightPx) ?: continue
         if (anchor.outside(widthPx, heightPx)) continue
         val objectClass = objectClassByFeatureId.objectClassFor(symbol.featureId)
         val score = symbol.strictSymbolScore(objectClass)
-        if (objectClass.isCriticalSymbolObjectClass()) criticalWinners.put(anchor, symbol, score) else normalWinners.put(anchor, symbol, score)
+        if (objectClass.isCriticalSymbolObjectClass() || symbol.symbolName.isCriticalSymbolName()) {
+            if (declutter.criticalSymbolTilePx <= 0) {
+                selected[symbol.featureId] = symbol
+            } else {
+                criticalWinners.put(anchor, symbol, score)
+            }
+        } else {
+            normalWinners.put(anchor, symbol, score)
+        }
     }
-    return (normalWinners.commands() + criticalWinners.commands()).associateBy { it.featureId }
+
+    for (symbol in normalWinners.commands()) selected[symbol.featureId] = symbol
+    for (symbol in criticalWinners.commands()) selected[symbol.featureId] = symbol
+    return selected
 }
 
 private fun S52DrawCommand.Text.isDeclutteredText(
@@ -318,14 +332,15 @@ private fun S52DrawCommand.AreaPattern.isDeclutteredVectorAreaPattern(
     grid: BrowserS52ScreenTileSet,
     emittedVectorAreaPatterns: Int
 ): Boolean {
-    if (declutter.areaPatternTilePx <= 0 && emittedVectorAreaPatterns < declutter.maxVectorAreaPatterns) return false
     val objectClass = objectClassByFeatureId.objectClassFor(featureId)
-    if (emittedVectorAreaPatterns >= declutter.maxVectorAreaPatterns && !objectClass.isCriticalPatternObjectClass()) return true
+    if (objectClass.isCriticalPatternObjectClass()) return false
+    if (declutter.areaPatternTilePx <= 0 && emittedVectorAreaPatterns < declutter.maxVectorAreaPatterns) return false
+    if (declutter.name != "overview" && emittedVectorAreaPatterns < declutter.maxVectorAreaPatterns) return false
+    if (emittedVectorAreaPatterns >= declutter.maxVectorAreaPatterns) return true
     val bounds = geometry.screenBounds(viewport, widthPx, heightPx) ?: return true
     if (bounds.outside(widthPx.toDouble(), heightPx.toDouble())) return true
-    if (bounds.area < 256.0 && !objectClass.isCriticalPatternObjectClass()) return true
+    if (bounds.area < 144.0) return true
     val anchor = geometry.screenAnchor(viewport, widthPx, heightPx) ?: return true
-    if (objectClass.isCriticalPatternObjectClass() && declutter.name != "overview") return false
     return !grid.accept(anchor)
 }
 
@@ -411,17 +426,29 @@ private fun Map<Long, String>.objectClassFor(featureId: Long): String = this[fea
 private fun String.isCriticalSymbolObjectClass(): Boolean = this in CriticalSymbolObjectClasses
 private fun String.isCriticalTextObjectClass(): Boolean = this in CriticalTextObjectClasses
 private fun String.isCriticalPatternObjectClass(): Boolean = this in CriticalPatternObjectClasses
+private fun String.isCriticalSymbolName(): Boolean {
+    val name = uppercase()
+    return name.contains("LIGHT") ||
+        name.contains("TOPMAR") ||
+        name.contains("BOY") ||
+        name.contains("BCN") ||
+        name.contains("BEACON") ||
+        name.contains("WRECK") ||
+        name.contains("OBSTR") ||
+        name.contains("DANGER") ||
+        name.contains("ROCK")
+}
 
 private val CriticalSymbolObjectClasses = setOf(
     "LIGHTS", "BOYLAT", "BOYSPP", "BOYSAW", "BOYCAR", "BOYISD", "BOYINB",
     "BCNLAT", "BCNSPP", "BCNSAW", "BCNCAR", "BCNISD", "WRECKS", "OBSTRN", "UWTROC",
-    "MORFAC", "PILPNT", "ACHBRT"
+    "MORFAC", "PILPNT", "ACHARE", "ANCHRG", "BERTHS", "DAYMAR", "FOGSIG", "RTPBCN"
 )
 
 private val CriticalTextObjectClasses = setOf(
     "LIGHTS", "BOYLAT", "BOYSPP", "BOYSAW", "BOYCAR", "BOYISD", "BOYINB",
     "BCNLAT", "BCNSPP", "BCNSAW", "BCNCAR", "BCNISD", "WRECKS", "OBSTRN", "UWTROC",
-    "DEPARE", "DRGARE"
+    "DEPARE", "DRGARE", "ACHARE", "BERTHS", "MORFAC"
 )
 
 private val CriticalPatternObjectClasses = setOf(
