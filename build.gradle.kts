@@ -39,3 +39,29 @@ val moduleBuilds = listOf(
     ":s57-render-webgl:build",
     ":demo:build"
 )
+
+registerAudit(
+    name = "phase16BCheck",
+    phase = "Phase 16 browser render pipeline diagnostics",
+    paths = listOf(
+        "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderPipelineDiagnostics.kt",
+        "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/RenderPipelineDiagnosticsTest.kt"
+    )
+) {
+    requireText(
+        path = "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderPipelineDiagnostics.kt",
+        needle = "Phase16Counters",
+        message = "Phase 16 diagnostics counters must remain available."
+    )
+    requireText(
+        path = "s57-render-webgl/src/commonMain/kotlin/io/github/s57/render/RenderPipelineDiagnostics.kt",
+        needle = "phase16Metadata",
+        message = "Phase 16 diagnostics metadata must remain available."
+    )
+    requireText(
+        path = "s57-render-webgl/src/commonTest/kotlin/io/github/s57/render/RenderPipelineDiagnosticsTest.kt",
+        needle = "phase16CountersCreatePipelineDiagnosticsForBlockedAndDegradedStages",
+        message = "Phase 16 diagnostics regression test must remain available."
+    )
+}
+
