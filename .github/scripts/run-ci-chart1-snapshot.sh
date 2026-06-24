@@ -52,6 +52,14 @@ echo "Created Chart 1 ENC snapshot input: $CHART1_ZIP"
 echo "Chart 1 ENC payloads:"
 sed 's/^/  /' "$CHART1_FILE_LIST"
 
+# render-snapshot.mjs writes a compatibility summary for the original Phase 26
+# path and reads these metadata files from build/ci-enc-snapshot/input.  The
+# regular Statue of Liberty snapshot artifact has already been uploaded before
+# this script runs, so rewrite the metadata to make the Chart 1 summary honest.
+mkdir -p build/ci-enc-snapshot/input
+printf '%s\n' "s52-kotlin-webgl main:s52/ECDIS_Chart_1/ENC_ROOT" > build/ci-enc-snapshot/input/selected-url.txt
+printf '%s\n' "$CHART1_ZIP" > build/ci-enc-snapshot/input/extracted-enc-path.txt
+
 if [[ -n "${PHASE26_APP_DIR:-}" ]]; then
   APP_DIR="$PHASE26_APP_DIR"
 else
