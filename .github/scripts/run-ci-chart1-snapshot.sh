@@ -9,6 +9,13 @@ INPUT_DIR="$OUT_DIR/input"
 CHART1_ZIP="$INPUT_DIR/chart1-enc.zip"
 CHART1_FILE_LIST="$INPUT_DIR/chart1-enc-file-list.txt"
 CHART1_ENC_ROOT="${CHART1_ENC_ROOT:-$ROOT_DIR/build/s52-chart1-source/s52/ECDIS_Chart_1/ENC_ROOT}"
+CHART1_WIDTH="${CHART1_WIDTH:-1920}"
+CHART1_HEIGHT="${CHART1_HEIGHT:-1080}"
+# Chart 1 is a synthetic symbol sheet, not a navigational harbor cell.  A
+# whole-cell fit collapses hundreds of fixed-pixel symbols into overlapping
+# boxes and causes label declutter to suppress text.  Publish readable detail
+# captures by default; callers can still override this for local experiments.
+CHART1_SNAPSHOT_FRACTIONS="${CHART1_SNAPSHOT_FRACTIONS:-section=0.24,symbols=0.16,labels=0.10}"
 
 if [[ ! -d "$CHART1_ENC_ROOT" ]]; then
   echo "Chart 1 ENC_ROOT directory not found: $CHART1_ENC_ROOT" >&2
@@ -51,6 +58,8 @@ fi
 echo "Created Chart 1 ENC snapshot input: $CHART1_ZIP"
 echo "Chart 1 ENC payloads:"
 sed 's/^/  /' "$CHART1_FILE_LIST"
+echo "Chart 1 snapshot viewport: ${CHART1_WIDTH}x${CHART1_HEIGHT}"
+echo "Chart 1 snapshot fractions: $CHART1_SNAPSHOT_FRACTIONS"
 
 # render-snapshot.mjs writes a compatibility summary for the original Phase 26
 # path and reads these metadata files from build/ci-enc-snapshot/input.  The
@@ -109,12 +118,14 @@ fi
   fi
   if command -v xvfb-run >/dev/null 2>&1; then
     PHASE26_HEADLESS=false PHASE26_BROWSER_CHANNEL=chromium PHASE26_GL_MODE=auto \
-      xvfb-run -a -s "-screen 0 1280x720x24" \
+      xvfb-run -a -s "-screen 0 ${CHART1_WIDTH}x${CHART1_HEIGHT}x24" \
       npm run snapshot -- \
         --app-dir="$ROOT_DIR/$APP_DIR" \
         --enc-file="$ROOT_DIR/$CHART1_ZIP" \
         --out-dir="$ROOT_DIR/$OUT_DIR" \
-        --snapshot-fractions="${CHART1_SNAPSHOT_FRACTIONS:-overview=1,comparison=0.70,detail=0.45}" \
+        --snapshot-fractions="$CHART1_SNAPSHOT_FRACTIONS" \
+        --width="$CHART1_WIDTH" \
+        --height="$CHART1_HEIGHT" \
         --headless=false \
         --browser-channel=chromium \
         --gl-mode=auto
@@ -124,7 +135,9 @@ fi
       --app-dir="$ROOT_DIR/$APP_DIR" \
       --enc-file="$ROOT_DIR/$CHART1_ZIP" \
       --out-dir="$ROOT_DIR/$OUT_DIR" \
-      --snapshot-fractions="${CHART1_SNAPSHOT_FRACTIONS:-overview=1,comparison=0.70,detail=0.45}" \
+      --snapshot-fractions="$CHART1_SNAPSHOT_FRACTIONS" \
+      --width="$CHART1_WIDTH" \
+      --height="$CHART1_HEIGHT" \
       --browser-channel=chromium \
       --gl-mode=auto
   fi
