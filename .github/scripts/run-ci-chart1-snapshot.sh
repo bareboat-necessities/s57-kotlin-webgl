@@ -11,11 +11,11 @@ CHART1_FILE_LIST="$INPUT_DIR/chart1-enc-file-list.txt"
 CHART1_ENC_ROOT="${CHART1_ENC_ROOT:-$ROOT_DIR/build/s52-chart1-source/s52/ECDIS_Chart_1/ENC_ROOT}"
 CHART1_WIDTH="${CHART1_WIDTH:-1920}"
 CHART1_HEIGHT="${CHART1_HEIGHT:-1080}"
-# Chart 1 is a synthetic symbol sheet, not a navigational harbor cell.  A
-# whole-cell fit collapses hundreds of fixed-pixel symbols into overlapping
-# boxes and causes label declutter to suppress text.  Publish readable detail
-# captures by default; callers can still override this for local experiments.
-CHART1_SNAPSHOT_FRACTIONS="${CHART1_SNAPSHOT_FRACTIONS:-section=0.24,symbols=0.16,labels=0.10}"
+# Chart 1 is a synthetic symbol sheet, not a navigational harbor cell.  Keep a
+# whole-sheet capture for coverage so symbols do not appear to be missing, and
+# also publish readable closer views for overlap/text inspection.  The middle
+# snapshot remains the compatibility render.png selected by render-snapshot.mjs.
+CHART1_SNAPSHOT_FRACTIONS="${CHART1_SNAPSHOT_FRACTIONS:-sheet=1,section=0.55,detail=0.30}"
 
 if [[ ! -d "$CHART1_ENC_ROOT" ]]; then
   echo "Chart 1 ENC_ROOT directory not found: $CHART1_ENC_ROOT" >&2
